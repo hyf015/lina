@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>与西比莉娜的对话</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Noto+Serif+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --parchment: #f4ecdc;
+    --parchment-dark: #ebdfc4;
+    --ink: #2b2118;
+    --ink-soft: #4a3b2d;
+    --ink-faint: #8a7558;
+    --accent: #7a3b2a;        /* sealing wax red */
+    --accent-soft: #a85842;
+    --gold: #b08438;
+    --line: #c8b591;
+    --shadow: 0 1px 0 rgba(0,0,0,0.06), 0 8px 24px rgba(60,40,20,0.08);
+    --shadow-deep: 0 2px 0 rgba(0,0,0,0.06), 0 18px 40px rgba(60,40,20,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: "Noto Serif SC", "Cormorant Garamond", serif;
+    color: var(--ink);
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(176,132,56,0.08), transparent 60%),
+      radial-gradient(ellipse at 80% 100%, rgba(122,59,42,0.08), transparent 60%),
+      var(--parchment);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 240px 1fr 320px;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "header header header"
+      "sidebar main rail";
+    height: 100vh;
+    gap: 0;
+  }
+
+  /* Header */
+  header.topbar {
+    grid-area: header;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,255,255,0));
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .brand {
+    font-family: "Cormorant Garamond", "Noto Serif SC", serif;
+    font-weight: 600;
+    font-size: 24px;
+    letter-spacing: 0.5px;
+    color: var(--ink);
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  .brand .zh { font-family: "Noto Serif SC", serif; font-size: 18px; color: var(--ink-soft); }
+  .brand .seal {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent); color: var(--parchment);
+    font-family: "Noto Serif SC", serif; font-weight: 600; font-size: 14px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15), 0 2px 4px rgba(0,0,0,0.25);
+  }
+
+  .topbar .grow { flex: 1; }
+
+  .auth-card {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 8px 6px 12px;
+    box-shadow: var(--shadow);
+  }
+  .auth-card input, .auth-card select {
+    border: none; background: transparent;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    color: var(--ink);
+    outline: none;
+  }
+  .auth-card input { width: 220px; }
+  .auth-card select { font-family: "Noto Serif SC", serif; font-size: 13px; cursor: pointer; }
+  .auth-card button {
+    background: var(--ink); color: var(--parchment);
+    border: 1px solid var(--ink);
+    border-radius: 4px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer;
+    font-family: inherit;
+  }
+  .auth-card button:hover { background: var(--accent); border-color: var(--accent); }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #c4404c; box-shadow: 0 0 0 2px rgba(196,64,76,0.15);
+  }
+  .status-dot.ready { background: #4a8d4a; box-shadow: 0 0 0 2px rgba(74,141,74,0.15); }
+
+  /* Sidebar */
+  aside.sidebar {
+    grid-area: sidebar;
+    border-right: 1px solid var(--line);
+    padding: 18px 12px;
+    overflow-y: auto;
+    background: rgba(255,253,247,0.4);
+  }
+  .sidebar h3 {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 500; font-size: 13px;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 6px 10px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .sidebar h3 button {
+    background: transparent; border: 1px dashed var(--ink-faint);
+    color: var(--ink-soft);
+    padding: 2px 8px;
+    font-size: 11px; cursor: pointer;
+    font-family: inherit; border-radius: 3px;
+  }
+  .sidebar h3 button:hover { border-color: var(--accent); color: var(--accent); }
+  .session-list { display: flex; flex-direction: column; gap: 2px; }
+  .session-item {
+    padding: 8px 10px; border-radius: 4px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    transition: background 0.12s;
+  }
+  .session-item:hover { background: rgba(176,132,56,0.08); }
+  .session-item.active {
+    background: rgba(122,59,42,0.10);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .session-item .title {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 13px;
+  }
+  .session-item .count {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; color: var(--ink-faint);
+  }
+  .session-item .del {
+    opacity: 0; background: transparent; border: none; cursor: pointer;
+    color: var(--ink-faint); font-size: 13px; padding: 0 2px;
+  }
+  .session-item:hover .del { opacity: 1; }
+  .session-item .del:hover { color: var(--accent); }
+
+  /* Main chat */
+  main.chat-area {
+    grid-area: main;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .chat-header {
+    padding: 12px 28px 8px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px;
+  }
+  .chat-header .title {
+    font-family: "Cormorant Garamond", serif;
+    font-size: 20px; font-weight: 500;
+  }
+  .chat-header .subtitle {
+    font-size: 12px; color: var(--ink-faint);
+    font-family: "JetBrains Mono", monospace;
+  }
+  .chat-header .actions { margin-left: auto; display: flex; gap: 6px; }
+  .chat-header .actions button {
+    background: transparent; border: 1px solid var(--line);
+    color: var(--ink-soft); padding: 4px 10px;
+    font-family: inherit; font-size: 12px; border-radius: 3px; cursor: pointer;
+  }
+  .chat-header .actions button:hover { border-color: var(--accent); color: var(--accent); }
+
+  .messages {
+    flex: 1; overflow-y: auto;
+    padding: 24px 28px 16px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .messages::-webkit-scrollbar { width: 10px; }
+  .messages::-webkit-scrollbar-thumb { background: rgba(122,59,42,0.2); border-radius: 5px; }
+
+  .empty-state {
+    margin: auto;
+    text-align: center;
+    color: var(--ink-faint);
+    max-width: 380px;
+    padding: 30px;
+  }
+  .empty-state h2 {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 500; font-size: 26px;
+    color: var(--ink-soft); margin: 0 0 6px;
+    font-style: italic;
+  }
+  .empty-state p { font-size: 13px; line-height: 1.7; }
+  .empty-state .quote {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid var(--line);
+    font-style: italic; color: var(--ink-faint);
+    font-size: 13px;
+  }
+
+  .msg { display: flex; gap: 12px; max-width: 100%; }
+  .msg .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600;
+    font-family: "Noto Serif SC", serif;
+  }
+  .msg.user .avatar {
+    background: var(--ink); color: var(--parchment);
+  }
+  .msg.assistant .avatar {
+    background: var(--accent); color: var(--parchment);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+  }
+  .msg .bubble {
+    background: rgba(255,253,247,0.85);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 14px;
+    box-shadow: var(--shadow);
+    max-width: 78%;
+    position: relative;
+  }
+  .msg.user .bubble { background: rgba(255,253,247,0.5); }
+  .msg.assistant .bubble {
+    background: rgba(252,247,234,0.9);
+    border-color: rgba(176,132,56,0.45);
+  }
+  .msg .role {
+    font-family: "Cormorant Garamond", serif;
+    font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 2px;
+  }
+  .msg.assistant .role { color: var(--accent); }
+  .msg .content {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 14.5px;
+    line-height: 1.7;
+  }
+
+  .typing {
+    display: inline-flex; gap: 4px; align-items: center;
+    padding: 6px 4px;
+  }
+  .typing span {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--ink-faint);
+    animation: blink 1.2s infinite;
+  }
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink {
+    0%, 60%, 100% { opacity: 0.3; }
+    30% { opacity: 1; }
+  }
+
+  /* Composer */
+  .composer {
+    border-top: 1px solid var(--line);
+    padding: 14px 28px 18px;
+    background: linear-gradient(180deg, rgba(255,255,255,0), rgba(244,236,220,0.6));
+  }
+  .composer-inner {
+    display: flex; gap: 10px; align-items: flex-end;
+    background: rgba(255,253,247,0.85);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 12px;
+    box-shadow: var(--shadow);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .composer-inner:focus-within {
+    border-color: var(--accent-soft);
+    box-shadow: 0 0 0 3px rgba(168,88,66,0.10), var(--shadow);
+  }
+  .composer textarea {
+    flex: 1; resize: none;
+    border: none; outline: none; background: transparent;
+    font-family: inherit; font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--ink);
+    max-height: 160px;
+    min-height: 22px;
+  }
+  .composer button.send {
+    background: var(--accent);
+    color: var(--parchment);
+    border: none; border-radius: 4px;
+    padding: 8px 18px;
+    font-family: "Noto Serif SC", serif; font-size: 13px;
+    cursor: pointer; transition: background 0.15s, transform 0.05s;
+    align-self: stretch;
+  }
+  .composer button.send:hover { background: var(--ink); }
+  .composer button.send:active { transform: translateY(1px); }
+  .composer button.send:disabled { background: var(--ink-faint); cursor: not-allowed; }
+  .composer-hint {
+    margin-top: 6px;
+    font-size: 11px; color: var(--ink-faint);
+    font-family: "JetBrains Mono", monospace;
+  }
+
+  /* Rail / context inspector */
+  aside.rail {
+    grid-area: rail;
+    border-left: 1px solid var(--line);
+    background: rgba(252,247,234,0.5);
+    overflow-y: auto;
+    padding: 18px 16px;
+  }
+  .rail h3 {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 500; font-size: 13px;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 4px;
+  }
+  .rail .rail-sub {
+    font-size: 12px; color: var(--ink-faint); margin-bottom: 16px;
+    font-style: italic;
+  }
+  .chunk {
+    background: rgba(255,253,247,0.85);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--gold);
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    font-size: 12.5px;
+    box-shadow: var(--shadow);
+  }
+  .chunk .src {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px; color: var(--ink-faint);
+    margin-bottom: 4px;
+  }
+  .chunk .src strong { color: var(--accent); }
+  .chunk .body {
+    white-space: pre-wrap;
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    line-height: 1.55;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+  .usage {
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+    line-height: 1.5;
+  }
+  .usage .label { color: var(--ink-soft); }
+
+  .toast {
+    position: fixed; bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink); color: var(--parchment);
+    padding: 8px 16px; border-radius: 4px;
+    font-size: 13px; box-shadow: var(--shadow-deep);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 1100px) {
+    .app { grid-template-columns: 200px 1fr; }
+    aside.rail { display: none; }
+    .app { grid-template-areas: "header header" "sidebar main"; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="seal">莉</span>
+      <span>Sibyllina</span>
+      <span class="zh">· 西比莉娜的工房</span>
+    </div>
+    <div class="grow"></div>
+    <div class="auth-card" id="auth-card">
+      <span class="status-dot" id="status-dot" title="未连接"></span>
+      <input type="password" id="api-key" placeholder="Anthropic API Key" autocomplete="off">
+      <select id="model-select">
+        <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+        <option value="claude-opus-4-7">Opus 4.7</option>
+        <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+      </select>
+      <button id="auth-btn">连接</button>
+    </div>
+  </header>
+
+  <aside class="sidebar">
+    <h3>会话 <button id="new-session">新建</button></h3>
+    <div class="session-list" id="session-list"></div>
+  </aside>
+
+  <main class="chat-area">
+    <div class="chat-header">
+      <span class="title">炼金工房</span>
+      <span class="subtitle" id="session-meta">尚未选择会话</span>
+      <div class="actions">
+        <button id="reset-btn" title="清空当前会话历史">清空历史</button>
+      </div>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="empty-state">
+        <h2>欢迎到工房来</h2>
+        <p>这里安静，有山泉接来的自来水，有几瓶在熬的草药茶。<br>桌上堆着几件等待鉴定的古代遗物。</p>
+        <div class="quote">"你知道吗，最有趣的话题往往藏在最普通的小事里。"</div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="composer-inner">
+        <textarea id="input" rows="1" placeholder="对她说点什么……（Shift+Enter 换行，Enter 发送）"></textarea>
+        <button class="send" id="send-btn">发送</button>
+      </div>
+      <div class="composer-hint">提示：莉娜对古代语、香草、戏剧、遗物都很有兴趣。</div>
+    </div>
+  </main>
+
+  <aside class="rail">
+    <h3>检索资料</h3>
+    <div class="rail-sub">RAG 为本轮对话检索到的设定片段。</div>
+    <div id="chunks"></div>
+    <div class="usage" id="usage" style="display:none;"></div>
+  </aside>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let state = {
+  ready: false,
+  currentSession: null,
+  sessions: [],
+  sending: false,
+};
+
+function toast(msg, ms = 2200) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) {
+    const err = (data && data.error) || `HTTP ${res.status}`;
+    throw new Error(err);
+  }
+  return data;
+}
+
+async function refreshStatus() {
+  try {
+    const s = await api('/api/status');
+    state.ready = s.ready;
+    $('status-dot').classList.toggle('ready', s.ready);
+    $('status-dot').title = s.ready ? `已连接 (${s.model})` : '未连接';
+    if (s.ready) {
+      $('api-key').placeholder = '已连接 (留空保持现状)';
+      $('model-select').value = s.model || s.default_model;
+    }
+  } catch (e) {}
+}
+
+async function loadSessions() {
+  const data = await api('/api/sessions');
+  state.sessions = data.sessions;
+  renderSessions();
+}
+
+function renderSessions() {
+  const root = $('session-list');
+  root.innerHTML = '';
+  if (state.sessions.length === 0) {
+    root.innerHTML = '<div style="padding: 12px; color: var(--ink-faint); font-size: 12px; font-style: italic;">尚无会话，点击"新建"。</div>';
+    return;
+  }
+  for (const s of state.sessions) {
+    const div = document.createElement('div');
+    div.className = 'session-item' + (s.session_id === state.currentSession ? ' active' : '');
+    div.innerHTML = `
+      <span class="title">${escapeHtml(s.title || '（无标题）')}</span>
+      <span class="count">${s.message_count}</span>
+      <button class="del" title="删除">×</button>
+    `;
+    div.addEventListener('click', (e) => {
+      if (e.target.classList.contains('del')) return;
+      selectSession(s.session_id);
+    });
+    div.querySelector('.del').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`删除会话 "${s.title || s.session_id}"？`)) return;
+      await api(`/api/sessions/${encodeURIComponent(s.session_id)}`, { method: 'DELETE' });
+      if (state.currentSession === s.session_id) state.currentSession = null;
+      await loadSessions();
+      if (!state.currentSession) renderMessages([]);
+    });
+    root.appendChild(div);
+  }
+}
+
+async function selectSession(id) {
+  state.currentSession = id;
+  const data = await api(`/api/sessions/${encodeURIComponent(id)}`);
+  $('session-meta').textContent = `会话：${data.session_id}`;
+  renderMessages(data.messages);
+  renderSessions();
+  $('chunks').innerHTML = '<div style="color: var(--ink-faint); font-size: 12px; font-style: italic;">发送消息后这里会出现 RAG 检索到的片段。</div>';
+  $('usage').style.display = 'none';
+}
+
+async function newSession() {
+  const data = await api('/api/sessions', { method: 'POST', body: JSON.stringify({}) });
+  await loadSessions();
+  await selectSession(data.session_id);
+}
+
+function renderMessages(messages) {
+  const root = $('messages');
+  root.innerHTML = '';
+  if (!messages || messages.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.innerHTML = `
+      <h2>这里很安静</h2>
+      <p>说点什么吧。她可能正在解读一卷古代语手稿，<br>但你一开口，她总会抬起头。</p>
+      <div class="quote">"……真的假的？你刚才说的那个词，是什么意思？"</div>
+    `;
+    root.appendChild(empty);
+    return;
+  }
+  for (const m of messages) appendMessage(m.role, m.content);
+  scrollToBottom();
+}
+
+function appendMessage(role, content, opts = {}) {
+  const root = $('messages');
+  const empty = root.querySelector('.empty-state');
+  if (empty) empty.remove();
+
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + role;
+  wrap.innerHTML = `
+    <div class="avatar">${role === 'user' ? '你' : '莉'}</div>
+    <div class="bubble">
+      <div class="role">${role === 'user' ? '客人' : '西比莉娜'}</div>
+      <div class="content"></div>
+    </div>
+  `;
+  const contentEl = wrap.querySelector('.content');
+  if (opts.typing) {
+    contentEl.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
+  } else {
+    contentEl.textContent = content;
+  }
+  root.appendChild(wrap);
+  scrollToBottom();
+  return wrap;
+}
+
+function scrollToBottom() {
+  const root = $('messages');
+  root.scrollTop = root.scrollHeight;
+}
+
+function renderChunks(chunks) {
+  const root = $('chunks');
+  root.innerHTML = '';
+  if (!chunks || chunks.length === 0) {
+    root.innerHTML = '<div style="color: var(--ink-faint); font-size: 12px; font-style: italic;">本轮无检索结果。</div>';
+    return;
+  }
+  for (const c of chunks) {
+    const el = document.createElement('div');
+    el.className = 'chunk';
+    el.innerHTML = `
+      <div class="src"><strong>${escapeHtml(c.source)}</strong> · ${escapeHtml(c.heading)}</div>
+      <div class="body"></div>
+    `;
+    el.querySelector('.body').textContent = c.text;
+    root.appendChild(el);
+  }
+}
+
+function renderUsage(u) {
+  if (!u) { $('usage').style.display = 'none'; return; }
+  const el = $('usage');
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div><span class="label">输入 tokens：</span>${u.input_tokens}</div>
+    <div><span class="label">输出 tokens：</span>${u.output_tokens}</div>
+    <div><span class="label">缓存写入：</span>${u.cache_creation_input_tokens}</div>
+    <div><span class="label">缓存读取：</span>${u.cache_read_input_tokens}</div>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+async function send() {
+  if (state.sending) return;
+  if (!state.ready) { toast('请先在右上角连接 API Key。'); return; }
+  if (!state.currentSession) { await newSession(); }
+
+  const ta = $('input');
+  const text = ta.value.trim();
+  if (!text) return;
+
+  ta.value = '';
+  ta.style.height = 'auto';
+  state.sending = true;
+  $('send-btn').disabled = true;
+
+  appendMessage('user', text);
+  const typingEl = appendMessage('assistant', '', { typing: true });
+
+  try {
+    const data = await api('/api/chat', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: state.currentSession, message: text }),
+    });
+    typingEl.querySelector('.content').textContent = data.reply;
+    renderChunks(data.retrieved);
+    renderUsage(data.usage);
+    await loadSessions();
+  } catch (e) {
+    typingEl.querySelector('.content').textContent = '（出错了：' + e.message + '）';
+    typingEl.querySelector('.content').style.color = 'var(--accent)';
+  } finally {
+    state.sending = false;
+    $('send-btn').disabled = false;
+    scrollToBottom();
+  }
+}
+
+$('auth-btn').addEventListener('click', async () => {
+  const key = $('api-key').value.trim();
+  const model = $('model-select').value;
+  if (!key) {
+    if (!state.ready) { toast('请输入 API Key。'); return; }
+    // Just switch model with existing key — not supported by /api/auth without key.
+    // Easiest: require key on switch. Otherwise skip.
+    toast('如需切换模型，请重新输入 API Key。');
+    return;
+  }
+  try {
+    await api('/api/auth', { method: 'POST', body: JSON.stringify({ api_key: key, model }) });
+    toast('已连接。');
+    $('api-key').value = '';
+    await refreshStatus();
+  } catch (e) {
+    toast('连接失败：' + e.message);
+  }
+});
+
+$('new-session').addEventListener('click', newSession);
+$('send-btn').addEventListener('click', send);
+$('reset-btn').addEventListener('click', async () => {
+  if (!state.currentSession) return;
+  if (!confirm('清空当前会话的历史消息？')) return;
+  await api(`/api/sessions/${encodeURIComponent(state.currentSession)}/reset`, { method: 'POST' });
+  await selectSession(state.currentSession);
+  await loadSessions();
+});
+
+$('input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+});
+$('input').addEventListener('input', (e) => {
+  e.target.style.height = 'auto';
+  e.target.style.height = Math.min(160, e.target.scrollHeight) + 'px';
+});
+
+(async function init() {
+  await refreshStatus();
+  await loadSessions();
+  if (state.sessions.length > 0) {
+    await selectSession(state.sessions[0].session_id);
+  }
+})();
+</script>
+</body>
+</html>

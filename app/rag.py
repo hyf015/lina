@@ -1,0 +1,204 @@
+"""Lightweight RAG over the character's static documents.
+
+Design choices:
+- Core identity files (`person_setup.md`, `world.md`) are always included in
+  the system prompt — they're load-bearing and small enough that retrieval
+  risks dropping the wrong slice.
+- Other files are chunked by markdown sections and retrieved via BM25.
+- Tokenization uses character bigrams, which works for Chinese without
+  pulling in a segmenter (jieba) as a dependency.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
+
+
+CORE_FILES = ("person_setup.md", "world.md")
+RAG_FILES = ("personality.md", "hobbies.md", "others.md", "sample_conversations.md")
+
+
+@dataclass
+class Chunk:
+    text: str
+    source: str
+    heading: str
+
+    def render(self) -> str:
+        return f"【{self.source} · {self.heading}】\n{self.text}"
+
+
+def _split_sections(content: str) -> list[tuple[str, str]]:
+    """Split markdown into (heading, body) pairs using level-1/2/3 headers."""
+    lines = content.splitlines()
+    sections: list[tuple[str, list[str]]] = []
+    current_heading = "（开头）"
+    current_body: list[str] = []
+    header_re = re.compile(r"^#{1,3}\s+(.+)")
+    for line in lines:
+        m = header_re.match(line)
+        if m:
+            if current_body:
+                sections.append((current_heading, current_body))
+            current_heading = m.group(1).strip()
+            current_body = []
+        else:
+            current_body.append(line)
+    if current_body:
+        sections.append((current_heading, current_body))
+    return [(h, "\n".join(b).strip()) for h, b in sections if "\n".join(b).strip()]
+
+
+def _chunk_body(body: str, max_chars: int = 600) -> list[str]:
+    """Further split long sections by numbered/bulleted items, paragraph-aware."""
+    if len(body) <= max_chars:
+        return [body]
+    # Split on numbered list items at start of line ("1.", "2.")
+    parts = re.split(r"\n(?=\s*\d+\.\s)", body)
+    chunks: list[str] = []
+    buf = ""
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if len(buf) + len(part) + 1 > max_chars and buf:
+            chunks.append(buf.strip())
+            buf = part
+        else:
+            buf = f"{buf}\n{part}".strip() if buf else part
+    if buf:
+        chunks.append(buf.strip())
+    return chunks
+
+
+def chunk_markdown(content: str, source: str) -> list[Chunk]:
+    chunks: list[Chunk] = []
+    for heading, body in _split_sections(content):
+        for piece in _chunk_body(body):
+            chunks.append(Chunk(text=piece, source=source, heading=heading))
+    return chunks
+
+
+def tokenize(text: str, n: int = 2) -> list[str]:
+    """Character n-gram tokens + ASCII word tokens.
+
+    Strips punctuation and whitespace; keeps CJK and alphanumeric runs.
+    Mixes ASCII word-level tokens so English keywords also retrieve.
+    """
+    # ASCII word tokens
+    ascii_words = re.findall(r"[A-Za-z][A-Za-z0-9]+", text.lower())
+    # CJK + digit run for n-grams
+    compact = re.sub(r"[^\w一-鿿]+", "", text)
+    compact = re.sub(r"\s+", "", compact)
+    ngrams: list[str] = []
+    if len(compact) >= n:
+        ngrams = [compact[i : i + n] for i in range(len(compact) - n + 1)]
+    elif compact:
+        ngrams = [compact]
+    return ngrams + ascii_words
+
+
+class BM25:
+    def __init__(self, k1: float = 1.5, b: float = 0.75):
+        self.k1 = k1
+        self.b = b
+        self.docs: list[list[str]] = []
+        self.tf: list[Counter] = []
+        self.idf: dict[str, float] = {}
+        self.avgdl: float = 0.0
+
+    def fit(self, tokenized_docs: list[list[str]]) -> None:
+        self.docs = tokenized_docs
+        self.tf = [Counter(d) for d in tokenized_docs]
+        n = max(1, len(tokenized_docs))
+        self.avgdl = sum(len(d) for d in tokenized_docs) / n
+        df: Counter[str] = Counter()
+        for d in tokenized_docs:
+            for term in set(d):
+                df[term] += 1
+        self.idf = {
+            term: math.log((n - f + 0.5) / (f + 0.5) + 1.0) for term, f in df.items()
+        }
+
+    def score(self, query_tokens: list[str], doc_idx: int) -> float:
+        if not self.docs:
+            return 0.0
+        doc = self.docs[doc_idx]
+        if not doc:
+            return 0.0
+        dl = len(doc)
+        tf = self.tf[doc_idx]
+        s = 0.0
+        for t in query_tokens:
+            idf = self.idf.get(t)
+            if idf is None:
+                continue
+            f = tf.get(t, 0)
+            if f == 0:
+                continue
+            num = f * (self.k1 + 1)
+            denom = f + self.k1 * (1 - self.b + self.b * dl / self.avgdl)
+            s += idf * num / denom
+        return s
+
+    def top_k(self, query_tokens: list[str], k: int = 4) -> list[tuple[int, float]]:
+        scored = [(i, self.score(query_tokens, i)) for i in range(len(self.docs))]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [(i, s) for i, s in scored[:k] if s > 0]
+
+
+class CharacterRAG:
+    """Loads static character files, exposes core text + retrieval over the rest."""
+
+    def __init__(self, static_dir: str | Path):
+        self.static_dir = Path(static_dir)
+        if not self.static_dir.exists():
+            raise FileNotFoundError(f"Static directory not found: {self.static_dir}")
+        self._core_text: str = ""
+        self._chunks: list[Chunk] = []
+        self._bm25 = BM25()
+        self._load()
+
+    def _load(self) -> None:
+        # Core files concatenated, with file labels for traceability.
+        core_parts: list[str] = []
+        for fname in CORE_FILES:
+            fpath = self.static_dir / fname
+            if fpath.exists():
+                core_parts.append(f"### 来源文件：{fname}\n{fpath.read_text(encoding='utf-8').strip()}")
+        self._core_text = "\n\n".join(core_parts)
+
+        for fname in RAG_FILES:
+            fpath = self.static_dir / fname
+            if not fpath.exists():
+                continue
+            self._chunks.extend(chunk_markdown(fpath.read_text(encoding="utf-8"), fname))
+
+        tokenized = [tokenize(c.text + " " + c.heading) for c in self._chunks]
+        self._bm25.fit(tokenized)
+
+    @property
+    def core_text(self) -> str:
+        return self._core_text
+
+    @property
+    def all_chunks(self) -> list[Chunk]:
+        return list(self._chunks)
+
+    def retrieve(self, query: str, k: int = 4) -> list[Chunk]:
+        if not query.strip() or not self._chunks:
+            return []
+        tokens = tokenize(query)
+        hits = self._bm25.top_k(tokens, k=k)
+        return [self._chunks[i] for i, _ in hits]
+
+    def retrieve_with_scores(self, query: str, k: int = 4) -> list[tuple[Chunk, float]]:
+        if not query.strip() or not self._chunks:
+            return []
+        tokens = tokenize(query)
+        hits = self._bm25.top_k(tokens, k=k)
+        return [(self._chunks[i], s) for i, s in hits]
