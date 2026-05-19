@@ -140,6 +140,10 @@ def create_app() -> Flask:
                     {"source": c.source, "heading": c.heading, "text": c.text}
                     for c in result.retrieved
                 ],
+                "retrieved_history": [
+                    {"source": c.source, "heading": c.heading, "text": c.text}
+                    for c in result.retrieved_history
+                ],
                 "usage": {
                     "input_tokens": result.input_tokens,
                     "output_tokens": result.output_tokens,

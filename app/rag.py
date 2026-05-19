@@ -83,23 +83,22 @@ def chunk_markdown(content: str, source: str) -> list[Chunk]:
     return chunks
 
 
-def tokenize(text: str, n: int = 2) -> list[str]:
+def tokenize(text: str) -> list[str]:
     """Character n-gram tokens + ASCII word tokens.
 
-    Strips punctuation and whitespace; keeps CJK and alphanumeric runs.
-    Mixes ASCII word-level tokens so English keywords also retrieve.
+    Emits both unigrams and bigrams over CJK + alphanumeric runs, plus
+    ASCII word-level tokens. Unigrams give partial credit when a key
+    character (e.g. 猫) appears in different bigram contexts; BM25's IDF
+    naturally downweights ubiquitous characters like 的/了/我.
     """
-    # ASCII word tokens
     ascii_words = re.findall(r"[A-Za-z][A-Za-z0-9]+", text.lower())
-    # CJK + digit run for n-grams
     compact = re.sub(r"[^\w一-鿿]+", "", text)
     compact = re.sub(r"\s+", "", compact)
-    ngrams: list[str] = []
-    if len(compact) >= n:
-        ngrams = [compact[i : i + n] for i in range(len(compact) - n + 1)]
-    elif compact:
-        ngrams = [compact]
-    return ngrams + ascii_words
+    if not compact:
+        return ascii_words
+    unigrams = [f"1:{c}" for c in compact]
+    bigrams = [f"2:{compact[i:i+2]}" for i in range(len(compact) - 1)]
+    return unigrams + bigrams + ascii_words
 
 
 class BM25:
@@ -202,3 +201,60 @@ class CharacterRAG:
         tokens = tokenize(query)
         hits = self._bm25.top_k(tokens, k=k)
         return [(self._chunks[i], s) for i, s in hits]
+
+
+def retrieve_history_chunks(
+    messages,
+    query: str,
+    k: int = 3,
+    exclude_recent_count: int = 30,
+) -> list[Chunk]:
+    """Build a per-session BM25 index over older (user, assistant) pairs and
+    return the top-k most relevant ones for `query`.
+
+    `messages` is the FULL list of past Message objects (or .role/.content
+    dataclass instances). The most recent `exclude_recent_count` messages are
+    skipped — those are already in the API's working window and don't need
+    retrieval.
+    """
+    if not query.strip() or not messages:
+        return []
+
+    older_count = len(messages) - exclude_recent_count
+    if older_count <= 0:
+        return []
+    older = messages[:older_count]
+
+    # Pair user turns with the immediately-following assistant turn.
+    pairs: list[tuple] = []
+    i = 0
+    while i < len(older):
+        m = older[i]
+        if m.role == "user":
+            if i + 1 < len(older) and older[i + 1].role == "assistant":
+                pairs.append((m, older[i + 1]))
+                i += 2
+            else:
+                pairs.append((m, None))
+                i += 1
+        else:
+            i += 1
+
+    if not pairs:
+        return []
+
+    docs: list[list[str]] = []
+    chunks: list[Chunk] = []
+    for idx, (u, a) in enumerate(pairs):
+        u_text = (u.content or "").strip()
+        a_text = (a.content if a else "").strip()
+        docs.append(tokenize(u_text + " " + a_text))
+        body = f"用户：{u_text}"
+        if a_text:
+            body += f"\n西比莉娜：{a_text}"
+        chunks.append(Chunk(text=body, source="对话历史", heading=f"第 {idx + 1} 轮"))
+
+    bm = BM25()
+    bm.fit(docs)
+    hits = bm.top_k(tokenize(query), k=k)
+    return [chunks[i] for i, _ in hits]

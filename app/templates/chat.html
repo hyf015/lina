@@ -350,6 +350,21 @@
     font-size: 12.5px;
     box-shadow: var(--shadow);
   }
+  .chunk.history {
+    border-left-color: var(--accent);
+    background: rgba(252,243,232,0.85);
+  }
+  .rail-section-title {
+    font-family: "Cormorant Garamond", serif;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 14px 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .rail-section-title:first-child { margin-top: 0; }
   .chunk .src {
     font-family: "JetBrains Mono", monospace;
     font-size: 10.5px; color: var(--ink-faint);
@@ -447,7 +462,7 @@
 
   <aside class="rail">
     <h3>检索资料</h3>
-    <div class="rail-sub">RAG 为本轮对话检索到的设定片段。</div>
+    <div class="rail-sub">RAG 为本轮检索到的设定片段与历史记忆。</div>
     <div id="chunks"></div>
     <div class="usage" id="usage" style="display:none;"></div>
   </aside>
@@ -600,22 +615,40 @@ function scrollToBottom() {
   root.scrollTop = root.scrollHeight;
 }
 
-function renderChunks(chunks) {
+function renderChunks(staticChunks, historyChunks) {
   const root = $('chunks');
   root.innerHTML = '';
-  if (!chunks || chunks.length === 0) {
+  const hasStatic = staticChunks && staticChunks.length > 0;
+  const hasHistory = historyChunks && historyChunks.length > 0;
+  if (!hasStatic && !hasHistory) {
     root.innerHTML = '<div style="color: var(--ink-faint); font-size: 12px; font-style: italic;">本轮无检索结果。</div>';
     return;
   }
-  for (const c of chunks) {
+
+  const appendChunk = (c, extraClass = '') => {
     const el = document.createElement('div');
-    el.className = 'chunk';
+    el.className = 'chunk' + (extraClass ? ' ' + extraClass : '');
     el.innerHTML = `
       <div class="src"><strong>${escapeHtml(c.source)}</strong> · ${escapeHtml(c.heading)}</div>
       <div class="body"></div>
     `;
     el.querySelector('.body').textContent = c.text;
     root.appendChild(el);
+  };
+
+  if (hasStatic) {
+    const t = document.createElement('div');
+    t.className = 'rail-section-title';
+    t.textContent = '角色设定';
+    root.appendChild(t);
+    for (const c of staticChunks) appendChunk(c);
+  }
+  if (hasHistory) {
+    const t = document.createElement('div');
+    t.className = 'rail-section-title';
+    t.textContent = '历史记忆';
+    root.appendChild(t);
+    for (const c of historyChunks) appendChunk(c, 'history');
   }
 }
 
@@ -660,7 +693,7 @@ async function send() {
       body: JSON.stringify({ session_id: state.currentSession, message: text }),
     });
     typingEl.querySelector('.content').textContent = data.reply;
-    renderChunks(data.retrieved);
+    renderChunks(data.retrieved, data.retrieved_history);
     renderUsage(data.usage);
     await loadSessions();
   } catch (e) {

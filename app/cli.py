@@ -63,7 +63,12 @@ def run() -> int:
     store = ConversationStore(CONVERSATIONS_DIR)
     conv = store.load(args.session) if args.session else store.new_session()
 
-    last_retrieved = []
+    last_retrieved: list = []
+    last_retrieved_history: list = []
+
+    def _clear_context_cache() -> None:
+        last_retrieved.clear()
+        last_retrieved_history.clear()
 
     print(BANNER)
     print(f"会话ID: {conv.session_id}    模型: {engine.model}")
@@ -97,7 +102,7 @@ def run() -> int:
             if cmd == "/new":
                 store.save(conv)
                 conv = store.new_session(rest or None)
-                last_retrieved = []
+                _clear_context_cache()
                 print(f"已开启新会话: {conv.session_id}\n")
                 continue
             if cmd == "/load":
@@ -106,7 +111,7 @@ def run() -> int:
                     continue
                 store.save(conv)
                 conv = store.load(rest)
-                last_retrieved = []
+                _clear_context_cache()
                 print(f"已加载会话: {conv.session_id} ({len(conv.messages)} 条消息)\n")
                 continue
             if cmd == "/list":
@@ -122,7 +127,7 @@ def run() -> int:
                 conv.messages.clear()
                 conv.title = ""
                 store.save(conv)
-                last_retrieved = []
+                _clear_context_cache()
                 print("当前会话历史已清空。\n")
                 continue
             if cmd == "/history":
@@ -135,13 +140,19 @@ def run() -> int:
                     print()
                 continue
             if cmd == "/context":
-                if not last_retrieved:
+                if not last_retrieved and not last_retrieved_history:
                     print("（尚无检索记录）\n")
                 else:
-                    print("--- 上一轮检索到的资料 ---")
-                    for c in last_retrieved:
-                        print(c.render())
-                        print()
+                    if last_retrieved:
+                        print("--- 上一轮检索到的角色设定片段 ---")
+                        for c in last_retrieved:
+                            print(c.render())
+                            print()
+                    if last_retrieved_history:
+                        print("--- 上一轮检索到的历史记忆 ---")
+                        for c in last_retrieved_history:
+                            print(c.render())
+                            print()
                 continue
             if cmd == "/model":
                 if not rest:
@@ -160,7 +171,8 @@ def run() -> int:
             print(f"[请求出错] {e}\n", file=sys.stderr)
             continue
 
-        last_retrieved = result.retrieved
+        last_retrieved[:] = result.retrieved
+        last_retrieved_history[:] = result.retrieved_history
         print(f"莉娜 ▸ {result.text}\n")
         store.save(conv)
 

@@ -17,7 +17,7 @@ from pathlib import Path
 import anthropic
 
 from .conversation import Conversation
-from .rag import CharacterRAG, Chunk
+from .rag import CharacterRAG, Chunk, retrieve_history_chunks
 
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -38,7 +38,11 @@ BEHAVIOR_RULES = """\
    - 因怀疑一切的实验精神，**问句较多**。
    - 不使用儿化音。
    - 句长比真实人类的口语略长，比"AI 书面腔"细碎。
-   - 适当使用括号内的简短动作或表情提示（如"（白眼）"、"（苦恼）"），频率不要过高，参考示例对话。
+   - **绝不输出动作、表情、神态、旁白、舞台提示**。
+     - 禁止：「（白眼）」「（苦恼）」「（摇头）」「（叹气）」「（高亢声音）」「(smile)」「*sigh*」「【沉默】」 之类的状态描写。
+     - 不论使用半角、全角、方括号还是星号包裹，**所有非口头说出的内容一律不要输出**。
+     - 只输出她真正说出口的话语。情绪请通过用词、语气词、句长和标点本身来传达。
+     - 即便参考资料（如示例对话）中包含括号动作，也只是供你理解她的情绪，不要照抄格式。
 5. **情感与亲密度**：
    - 公开/陌生人场合压抑情绪、谨慎遣词、避免冒犯。
    - 二人私下场合可以稍微外露。
@@ -77,6 +81,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
 class ChatResult:
     text: str
     retrieved: list[Chunk]
+    retrieved_history: list[Chunk]
     input_tokens: int = 0
     output_tokens: int = 0
     cache_creation_tokens: int = 0
@@ -92,6 +97,7 @@ class CharacterEngine:
         max_tokens: int = 1024,
         history_window: int = 30,
         retrieve_k: int = 4,
+        history_retrieve_k: int = 3,
     ):
         if not api_key:
             raise ValueError("Anthropic API key is required.")
@@ -101,6 +107,7 @@ class CharacterEngine:
         self.max_tokens = max_tokens
         self.history_window = history_window
         self.retrieve_k = retrieve_k
+        self.history_retrieve_k = history_retrieve_k
         self._system_blocks = self._build_system_blocks()
 
     def _build_system_blocks(self) -> list[dict]:
@@ -118,25 +125,52 @@ class CharacterEngine:
             }
         ]
 
-    def _build_user_content(self, user_message: str, retrieved: list[Chunk]) -> str:
-        if not retrieved:
+    def _build_user_content(
+        self,
+        user_message: str,
+        retrieved: list[Chunk],
+        retrieved_history: list[Chunk],
+    ) -> str:
+        if not retrieved and not retrieved_history:
             return user_message
-        context_text = "\n\n".join(c.render() for c in retrieved)
-        return (
-            "<参考资料 — 与本轮对话相关，仅作背景，不要照搬>\n"
-            f"{context_text}\n</参考资料>\n\n"
-            f"<用户发言>\n{user_message}\n</用户发言>"
-        )
+        sections: list[str] = []
+        if retrieved:
+            static_text = "\n\n".join(c.render() for c in retrieved)
+            sections.append(
+                "<角色设定参考 — 与本轮对话相关的设定细节，仅作背景，不要照搬其措辞或括号动作>\n"
+                f"{static_text}\n</角色设定参考>"
+            )
+        if retrieved_history:
+            hist_text = "\n\n".join(c.render() for c in retrieved_history)
+            sections.append(
+                "<历史回忆 — 来自本会话更早轮次的相关片段。这些都是已经发生过的对话，"
+                "用户之前讲过的事实/偏好/承诺，请记住并保持一致；不要重复或复述。>\n"
+                f"{hist_text}\n</历史回忆>"
+            )
+        sections.append(f"<用户发言>\n{user_message}\n</用户发言>")
+        return "\n\n".join(sections)
 
     def chat(self, conversation: Conversation, user_message: str) -> ChatResult:
         retrieved = self.rag.retrieve(user_message, k=self.retrieve_k)
+
+        # Retrieve from older turns of THIS session that won't fit in the
+        # recent-history window — long-term memory of facts the user told.
+        retrieved_history = retrieve_history_chunks(
+            conversation.messages,
+            user_message,
+            k=self.history_retrieve_k,
+            exclude_recent_count=self.history_window,
+        )
 
         # Build the API messages: prior history (windowed) + new user turn.
         prior = conversation.as_api_messages()
         if self.history_window > 0:
             prior = prior[-self.history_window :]
         api_messages = list(prior) + [
-            {"role": "user", "content": self._build_user_content(user_message, retrieved)}
+            {
+                "role": "user",
+                "content": self._build_user_content(user_message, retrieved, retrieved_history),
+            }
         ]
 
         response = self.client.messages.create(
@@ -157,6 +191,7 @@ class CharacterEngine:
         return ChatResult(
             text=reply_text,
             retrieved=retrieved,
+            retrieved_history=retrieved_history,
             input_tokens=getattr(usage, "input_tokens", 0) or 0,
             output_tokens=getattr(usage, "output_tokens", 0) or 0,
             cache_creation_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
