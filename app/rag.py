@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-CORE_FILES = ("person_setup.md", "world.md")
-RAG_FILES = ("personality.md", "hobbies.md", "others.md", "sample_conversations.md")
+CORE_FILES = ("person_setup.md", "world.md", "sample_conversations.md")
+RAG_FILES = ("personality.md", "hobbies.md", "others.md")
 
 
 @dataclass

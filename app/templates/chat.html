@@ -252,12 +252,57 @@
     margin-bottom: 2px;
   }
   .msg.assistant .role { color: var(--accent); }
+  .msg .role-row {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 2px;
+  }
+  .mood-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; letter-spacing: 0.5px;
+    color: var(--ink-soft);
+    background: rgba(176,132,56,0.10);
+    border: 1px solid rgba(176,132,56,0.35);
+    border-radius: 10px;
+    padding: 1px 7px;
+  }
+  .mood-chip .word {
+    font-family: "Noto Serif SC", serif;
+    font-weight: 500;
+  }
+  .mood-chip .dots {
+    color: var(--accent);
+    letter-spacing: -1px;
+  }
+  .mood-chip.trust {
+    background: rgba(122,59,42,0.08);
+    border-color: rgba(122,59,42,0.30);
+  }
   .msg .content {
     white-space: pre-wrap;
     word-wrap: break-word;
     font-size: 14.5px;
     line-height: 1.7;
   }
+
+  .state-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 28px 6px;
+    background: rgba(252,247,234,0.5);
+    border-bottom: 1px dashed var(--line);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+    min-height: 28px;
+  }
+  .state-bar .label {
+    font-family: "Cormorant Garamond", serif;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-size: 10px;
+  }
+  .state-bar .mood-chip { font-size: 11px; padding: 2px 9px; }
+  .state-bar.empty { color: var(--ink-faint); font-style: italic; }
 
   .typing {
     display: inline-flex; gap: 4px; align-items: center;
@@ -443,6 +488,11 @@
       </div>
     </div>
 
+    <div class="state-bar empty" id="state-bar">
+      <span class="label">当前状态</span>
+      <span id="state-content">尚无</span>
+    </div>
+
     <div class="messages" id="messages">
       <div class="empty-state">
         <h2>欢迎到工房来</h2>
@@ -579,10 +629,39 @@ function renderMessages(messages) {
       <div class="quote">"……真的假的？你刚才说的那个词，是什么意思？"</div>
     `;
     root.appendChild(empty);
+    renderStateBar(null);
     return;
   }
-  for (const m of messages) appendMessage(m.role, m.content);
+  let latestMood = null;
+  for (const m of messages) {
+    appendMessage(m.role, m.content, { meta: m.meta });
+    if (m.role === 'assistant' && m.meta) latestMood = m.meta;
+  }
+  renderStateBar(latestMood);
   scrollToBottom();
+}
+
+function moodChipHTML(meta) {
+  if (!meta) return '';
+  const dots = '●'.repeat(Math.max(1, Math.min(10, meta.intensity || 1)));
+  const w = escapeHtml(meta.mood || '?');
+  const t = meta.trust != null ? meta.trust : '?';
+  return `
+    <span class="mood-chip"><span class="word">${w}</span><span class="dots">${dots}</span></span>
+    <span class="mood-chip trust">信任 ${t}/10</span>
+  `;
+}
+
+function renderStateBar(meta) {
+  const bar = $('state-bar');
+  const content = $('state-content');
+  if (!meta) {
+    bar.classList.add('empty');
+    content.textContent = '尚无';
+    return;
+  }
+  bar.classList.remove('empty');
+  content.innerHTML = moodChipHTML(meta);
 }
 
 function appendMessage(role, content, opts = {}) {
@@ -592,10 +671,14 @@ function appendMessage(role, content, opts = {}) {
 
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
+  const chip = (role === 'assistant' && opts.meta) ? moodChipHTML(opts.meta) : '';
   wrap.innerHTML = `
     <div class="avatar">${role === 'user' ? '你' : '莉'}</div>
     <div class="bubble">
-      <div class="role">${role === 'user' ? '客人' : '西比莉娜'}</div>
+      <div class="role-row">
+        <span class="role">${role === 'user' ? '客人' : '西比莉娜'}</span>
+        ${chip}
+      </div>
       <div class="content"></div>
     </div>
   `;
@@ -608,6 +691,15 @@ function appendMessage(role, content, opts = {}) {
   root.appendChild(wrap);
   scrollToBottom();
   return wrap;
+}
+
+function setBubbleMood(wrap, meta) {
+  if (!meta) return;
+  const roleRow = wrap.querySelector('.role-row');
+  if (!roleRow) return;
+  // Strip any existing chips first
+  roleRow.querySelectorAll('.mood-chip').forEach(el => el.remove());
+  roleRow.insertAdjacentHTML('beforeend', moodChipHTML(meta));
 }
 
 function scrollToBottom() {
@@ -693,6 +785,8 @@ async function send() {
       body: JSON.stringify({ session_id: state.currentSession, message: text }),
     });
     typingEl.querySelector('.content').textContent = data.reply;
+    setBubbleMood(typingEl, data.mood);
+    renderStateBar(data.mood);
     renderChunks(data.retrieved, data.retrieved_history);
     renderUsage(data.usage);
     await loadSessions();

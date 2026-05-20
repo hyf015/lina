@@ -136,6 +136,7 @@ def create_app() -> Flask:
             {
                 "ok": True,
                 "reply": result.text,
+                "mood": result.mood,
                 "retrieved": [
                     {"source": c.source, "heading": c.heading, "text": c.text}
                     for c in result.retrieved

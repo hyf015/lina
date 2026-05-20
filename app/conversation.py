@@ -16,13 +16,24 @@ class Message:
     role: str  # "user" or "assistant"
     content: str
     ts: float = field(default_factory=time.time)
+    # Free-form metadata. For assistant messages this carries the parsed mood
+    # tag (mood / intensity / trust). Stored verbatim alongside the message.
+    meta: dict | None = None
 
     def to_dict(self) -> dict:
-        return {"role": self.role, "content": self.content, "ts": self.ts}
+        d: dict = {"role": self.role, "content": self.content, "ts": self.ts}
+        if self.meta:
+            d["meta"] = self.meta
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Message":
-        return cls(role=d["role"], content=d["content"], ts=d.get("ts", time.time()))
+        return cls(
+            role=d["role"],
+            content=d["content"],
+            ts=d.get("ts", time.time()),
+            meta=d.get("meta"),
+        )
 
 
 def _safe_session_id(raw: str | None) -> str:
@@ -40,12 +51,18 @@ class Conversation:
     created_at: float = field(default_factory=time.time)
     title: str = ""
 
-    def add(self, role: str, content: str) -> Message:
-        msg = Message(role=role, content=content)
+    def add(self, role: str, content: str, meta: dict | None = None) -> Message:
+        msg = Message(role=role, content=content, meta=meta)
         self.messages.append(msg)
         if not self.title and role == "user":
             self.title = content[:30]
         return msg
+
+    def last_assistant_meta(self) -> dict | None:
+        for m in reversed(self.messages):
+            if m.role == "assistant" and m.meta:
+                return m.meta
+        return None
 
     def as_api_messages(self) -> list[dict]:
         return [{"role": m.role, "content": m.content} for m in self.messages]

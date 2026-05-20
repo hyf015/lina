@@ -136,7 +136,14 @@ def run() -> int:
                 else:
                     for m in conv.messages:
                         prefix = "你" if m.role == "user" else "莉娜"
-                        print(f"[{prefix}] {m.content}")
+                        suffix = ""
+                        if m.role == "assistant" and m.meta:
+                            suffix = (
+                                f"  〔{m.meta.get('mood', '?')}·"
+                                f"{m.meta.get('intensity', '?')} | "
+                                f"信任 {m.meta.get('trust', '?')}〕"
+                            )
+                        print(f"[{prefix}] {m.content}{suffix}")
                     print()
                 continue
             if cmd == "/context":
@@ -173,7 +180,15 @@ def run() -> int:
 
         last_retrieved[:] = result.retrieved
         last_retrieved_history[:] = result.retrieved_history
-        print(f"莉娜 ▸ {result.text}\n")
+        if result.mood:
+            mood_str = (
+                f"  〔{result.mood.get('mood', '?')}·"
+                f"{result.mood.get('intensity', '?')} | "
+                f"信任 {result.mood.get('trust', '?')}/10〕"
+            )
+        else:
+            mood_str = "  〔mood: -〕"
+        print(f"莉娜 ▸ {result.text}{mood_str}\n")
         store.save(conv)
 
 
