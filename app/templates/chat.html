@@ -484,6 +484,7 @@
       <span class="title">炼金工房</span>
       <span class="subtitle" id="session-meta">尚未选择会话</span>
       <div class="actions">
+        <button id="export-btn" title="下载当前会话 JSON">下载</button>
         <button id="reset-btn" title="清空当前会话历史">清空历史</button>
       </div>
     </div>
@@ -828,6 +829,17 @@ $('reset-btn').addEventListener('click', async () => {
   await api(`/api/sessions/${encodeURIComponent(state.currentSession)}/reset`, { method: 'POST' });
   await selectSession(state.currentSession);
   await loadSessions();
+});
+
+$('export-btn').addEventListener('click', () => {
+  if (!state.currentSession) { toast('请先选择会话。'); return; }
+  const url = `/api/sessions/${encodeURIComponent(state.currentSession)}/export`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${state.currentSession}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 });
 
 $('input').addEventListener('keydown', (e) => {

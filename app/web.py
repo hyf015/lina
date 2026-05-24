@@ -10,7 +10,9 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+import json
+
+from flask import Flask, Response, jsonify, render_template, request
 
 from .character import CharacterEngine, DEFAULT_MODEL
 from .config import CONVERSATIONS_DIR, STATIC_DIR, resolve_api_key
@@ -102,6 +104,20 @@ def create_app() -> Flask:
     def delete_session(session_id: str):
         ok = _store.delete(session_id)
         return jsonify({"ok": ok})
+
+    @app.route("/api/sessions/<session_id>/export", methods=["GET"])
+    def export_session(session_id: str):
+        conv = _store.load(session_id)
+        payload = json.dumps(conv.to_dict(), ensure_ascii=False, indent=2)
+        return Response(
+            payload,
+            mimetype="application/json; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{conv.session_id}.json"'
+                ),
+            },
+        )
 
     @app.route("/api/sessions/<session_id>/reset", methods=["POST"])
     def reset_session(session_id: str):

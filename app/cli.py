@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import sys
+from pathlib import Path
 
 from .character import CharacterEngine, DEFAULT_MODEL
 from .config import CONVERSATIONS_DIR, STATIC_DIR, resolve_api_key
@@ -13,15 +15,16 @@ from .conversation import ConversationStore
 
 HELP_TEXT = """\
 命令：
-  /help          显示这条帮助
-  /new [id]      开启新会话（可选自定义ID）
-  /load <id>     加载已有会话
-  /list          列出所有会话
-  /reset         清空当前会话历史
-  /history       打印当前会话的完整历史
-  /context       显示上一轮检索到的资料片段
-  /model <name>  切换模型（如 claude-opus-4-7、claude-sonnet-4-6、claude-haiku-4-5-20251001）
-  /quit, /exit   退出
+  /help            显示这条帮助
+  /new [id]        开启新会话（可选自定义ID）
+  /load <id>       加载已有会话
+  /list            列出所有会话
+  /reset           清空当前会话历史
+  /history         打印当前会话的完整历史
+  /context         显示上一轮检索到的资料片段
+  /export [path]   把当前会话以 JSON 格式导出到指定路径（默认：当前目录/<session_id>.json）
+  /model <name>    切换模型（如 claude-opus-4-7、claude-sonnet-4-6、claude-haiku-4-5-20251001）
+  /quit, /exit     退出
 
 直接输入文字即可与莉娜对话。
 """
@@ -160,6 +163,20 @@ def run() -> int:
                         for c in last_retrieved_history:
                             print(c.render())
                             print()
+                continue
+            if cmd == "/export":
+                target = Path(rest).expanduser() if rest else Path.cwd() / f"{conv.session_id}.json"
+                if target.is_dir():
+                    target = target / f"{conv.session_id}.json"
+                try:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(
+                        json.dumps(conv.to_dict(), ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    print(f"已导出到：{target}\n")
+                except OSError as e:
+                    print(f"导出失败：{e}\n", file=sys.stderr)
                 continue
             if cmd == "/model":
                 if not rest:
