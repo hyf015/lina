@@ -63,7 +63,7 @@ In-session commands: `/help`, `/new [id]`, `/load <id>`, `/list`, `/reset`, `/hi
 ## Run — Web GUI
 
 ```bash
-python run_web.py             # http://127.0.0.1:5050
+python run_web.py             # http://127.0.0.1:8000
 python run_web.py --port 8080
 ```
 
