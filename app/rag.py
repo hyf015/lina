@@ -151,31 +151,48 @@ class BM25:
 
 
 class CharacterRAG:
-    """Loads static character files, exposes core text + retrieval over the rest."""
+    """Loads static character files, exposes core text + retrieval over the rest.
 
-    def __init__(self, static_dir: str | Path):
+    `file_overrides` lets callers substitute the content of one or more
+    static files at runtime without touching disk (used by the in-app
+    prompt editor — overrides are kept off-git).
+    """
+
+    def __init__(
+        self,
+        static_dir: str | Path,
+        file_overrides: dict[str, str] | None = None,
+    ):
         self.static_dir = Path(static_dir)
         if not self.static_dir.exists():
             raise FileNotFoundError(f"Static directory not found: {self.static_dir}")
+        self.file_overrides = dict(file_overrides or {})
         self._core_text: str = ""
         self._chunks: list[Chunk] = []
         self._bm25 = BM25()
         self._load()
 
+    def _read(self, fname: str) -> str:
+        if fname in self.file_overrides:
+            return self.file_overrides[fname]
+        fpath = self.static_dir / fname
+        if fpath.exists():
+            return fpath.read_text(encoding="utf-8")
+        return ""
+
     def _load(self) -> None:
         # Core files concatenated, with file labels for traceability.
         core_parts: list[str] = []
         for fname in CORE_FILES:
-            fpath = self.static_dir / fname
-            if fpath.exists():
-                core_parts.append(f"### 来源文件：{fname}\n{fpath.read_text(encoding='utf-8').strip()}")
+            content = self._read(fname).strip()
+            if content:
+                core_parts.append(f"### 来源文件：{fname}\n{content}")
         self._core_text = "\n\n".join(core_parts)
 
         for fname in RAG_FILES:
-            fpath = self.static_dir / fname
-            if not fpath.exists():
-                continue
-            self._chunks.extend(chunk_markdown(fpath.read_text(encoding="utf-8"), fname))
+            content = self._read(fname)
+            if content:
+                self._chunks.extend(chunk_markdown(content, fname))
 
         tokenized = [tokenize(c.text + " " + c.heading) for c in self._chunks]
         self._bm25.fit(tokenized)

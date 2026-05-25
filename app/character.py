@@ -303,24 +303,48 @@ class CharacterEngine:
         history_window: int = 30,
         retrieve_k: int = 4,
         history_retrieve_k: int = 3,
+        overrides: dict[str, str] | None = None,
     ):
         if not api_key:
             raise ValueError("Anthropic API key is required.")
+        self.api_key = api_key
+        self.static_dir = Path(static_dir)
         self.client = anthropic.Anthropic(api_key=api_key)
-        self.rag = CharacterRAG(static_dir)
         self.model = model
         self.max_tokens = max_tokens
         self.history_window = history_window
         self.retrieve_k = retrieve_k
         self.history_retrieve_k = history_retrieve_k
+        self.overrides: dict[str, str] = dict(overrides or {})
+        self.rag = CharacterRAG(self.static_dir, file_overrides=self._file_overrides())
+        self._system_blocks = self._build_system_blocks()
+
+    def _file_overrides(self) -> dict[str, str]:
+        """Subset of overrides that target static .md files."""
+        return {k: v for k, v in self.overrides.items() if k.endswith(".md")}
+
+    def apply_overrides(self, overrides: dict[str, str] | None) -> None:
+        """Replace overrides and rebuild RAG + cached system prompt in place."""
+        self.overrides = dict(overrides or {})
+        self.rag = CharacterRAG(self.static_dir, file_overrides=self._file_overrides())
         self._system_blocks = self._build_system_blocks()
 
     def _build_system_blocks(self) -> list[dict]:
-        prompt = SYSTEM_PROMPT_TEMPLATE.format(
-            core_text=self.rag.core_text,
-            behavior_rules=BEHAVIOR_RULES,
-            mood_format_spec=MOOD_FORMAT_SPEC,
-        )
+        behavior = self.overrides.get("BEHAVIOR_RULES", BEHAVIOR_RULES)
+        mood = self.overrides.get("MOOD_FORMAT_SPEC", MOOD_FORMAT_SPEC)
+        template = self.overrides.get("SYSTEM_PROMPT_TEMPLATE", SYSTEM_PROMPT_TEMPLATE)
+        try:
+            prompt = template.format(
+                core_text=self.rag.core_text,
+                behavior_rules=behavior,
+                mood_format_spec=mood,
+            )
+        except (KeyError, IndexError):
+            # User-provided template may have removed/renamed placeholders.
+            # Fall back to a simple concatenation rather than crashing.
+            prompt = (
+                f"{template}\n\n{self.rag.core_text}\n\n{behavior}\n\n{mood}"
+            )
         # Single cached system block. Prompt caching needs at least ~1024
         # tokens; the character corpus is well above that.
         return [

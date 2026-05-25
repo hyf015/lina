@@ -33,22 +33,49 @@
       var(--parchment);
     font-size: 15px;
     line-height: 1.6;
+    display: flex;
+    flex-direction: column;
   }
 
-  .app {
+  .view { flex: 1; min-height: 0; display: none; }
+  .view.active.view-chat {
     display: grid;
     grid-template-columns: 240px 1fr 320px;
-    grid-template-rows: auto 1fr;
-    grid-template-areas:
-      "header header header"
-      "sidebar main rail";
-    height: 100vh;
-    gap: 0;
+  }
+  .view.active.view-prompts {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  /* Tabs in the topbar */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    margin-left: 20px;
+  }
+  .tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--ink-faint);
+    font-family: "Cormorant Garamond", "Noto Serif SC", serif;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    padding: 6px 14px 8px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab:hover { color: var(--ink-soft); }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
   }
 
   /* Header */
   header.topbar {
-    grid-area: header;
+    flex-shrink: 0;
     padding: 14px 22px;
     border-bottom: 1px solid var(--line);
     background: linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,255,255,0));
@@ -108,7 +135,6 @@
 
   /* Sidebar */
   aside.sidebar {
-    grid-area: sidebar;
     border-right: 1px solid var(--line);
     padding: 18px 12px;
     overflow-y: auto;
@@ -159,10 +185,10 @@
 
   /* Main chat */
   main.chat-area {
-    grid-area: main;
     display: flex; flex-direction: column;
     overflow: hidden;
     position: relative;
+    min-width: 0;
   }
 
   .chat-header {
@@ -368,7 +394,6 @@
 
   /* Rail / context inspector */
   aside.rail {
-    grid-area: rail;
     border-left: 1px solid var(--line);
     background: rgba(252,247,234,0.5);
     overflow-y: auto;
@@ -447,32 +472,189 @@
   .toast.show { opacity: 1; }
 
   @media (max-width: 1100px) {
-    .app { grid-template-columns: 200px 1fr; }
+    .view.active.view-chat { grid-template-columns: 200px 1fr; }
     aside.rail { display: none; }
-    .app { grid-template-areas: "header header" "sidebar main"; }
   }
+
+  /* ---------- Prompts editor view ---------- */
+  .prompts-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 20px 28px 40px;
+    width: 100%;
+  }
+  .prompts-banner {
+    display: flex; align-items: center; gap: 14px;
+    background: rgba(176,132,56,0.10);
+    border: 1px solid rgba(176,132,56,0.40);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 18px;
+  }
+  .prompts-banner .seal {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--gold); color: var(--parchment);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: "Noto Serif SC", serif; font-weight: 600;
+    flex-shrink: 0;
+  }
+  .prompts-banner .text { flex: 1; font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
+  .prompts-banner .text strong { color: var(--accent); }
+
+  .prompts-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 18px;
+    padding: 10px 14px;
+    background: rgba(255,253,247,0.65);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+  }
+  .prompts-toolbar .status {
+    flex: 1;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+  .prompts-toolbar .status strong { color: var(--accent); }
+  .prompts-toolbar button {
+    background: var(--parchment);
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    padding: 6px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: border-color 0.12s, color 0.12s;
+  }
+  .prompts-toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+  .prompts-toolbar button.primary {
+    background: var(--ink);
+    color: var(--parchment);
+    border-color: var(--ink);
+  }
+  .prompts-toolbar button.primary:hover { background: var(--accent); border-color: var(--accent); color: var(--parchment); }
+  .prompts-toolbar button.danger:hover { border-color: #b53b3b; color: #b53b3b; }
+
+  .prompt-card {
+    background: rgba(255,253,247,0.75);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 14px 16px 16px;
+    margin-bottom: 14px;
+    box-shadow: var(--shadow);
+    transition: border-color 0.15s;
+  }
+  .prompt-card.overridden { border-color: var(--accent-soft); box-shadow: 0 0 0 1px rgba(168,88,66,0.15), var(--shadow); }
+  .prompt-card-head {
+    display: flex; align-items: baseline; gap: 10px;
+    margin-bottom: 6px;
+  }
+  .prompt-card-head .label {
+    font-family: "Cormorant Garamond", "Noto Serif SC", serif;
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .prompt-card-head .key {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+  .prompt-card-head .badge {
+    margin-left: auto;
+    font-family: "Cormorant Garamond", serif;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding: 2px 8px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .prompt-card.overridden .prompt-card-head .badge {
+    color: var(--accent); border-color: var(--accent);
+    background: rgba(122,59,42,0.07);
+  }
+  .prompt-card-hint {
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-style: italic;
+    margin-bottom: 8px;
+  }
+  .prompt-card textarea {
+    width: 100%;
+    min-height: 160px;
+    max-height: 480px;
+    font-family: "JetBrains Mono", "Noto Serif SC", monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--ink);
+    background: rgba(255,253,247,0.95);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 10px 12px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.12s;
+  }
+  .prompt-card textarea:focus { border-color: var(--accent-soft); }
+  .prompt-card-foot {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px;
+  }
+  .prompt-card-foot .dirty {
+    flex: 1;
+    font-size: 11px;
+    color: var(--ink-faint);
+    font-style: italic;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .prompt-card-foot .dirty.show { color: var(--accent); }
+  .prompt-card-foot button {
+    background: var(--parchment);
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    padding: 4px 12px;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .prompt-card-foot button:hover { border-color: var(--accent); color: var(--accent); }
+  .prompt-card-foot button.primary {
+    background: var(--accent); color: var(--parchment); border-color: var(--accent);
+  }
+  .prompt-card-foot button.primary:hover { background: var(--ink); border-color: var(--ink); color: var(--parchment); }
+  .prompt-card-foot button:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>
 </head>
 <body>
-<div class="app">
-  <header class="topbar">
-    <div class="brand">
-      <span class="seal">莉</span>
-      <span>Sibyllina</span>
-      <span class="zh">· 西比莉娜的工房</span>
-    </div>
-    <div class="grow"></div>
-    <div class="auth-card" id="auth-card">
-      <span class="status-dot" id="status-dot" title="未连接"></span>
-      <input type="password" id="api-key" placeholder="Anthropic API Key" autocomplete="off">
-      <select id="model-select">
-        <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-        <option value="claude-opus-4-7">Opus 4.7</option>
-        <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-      </select>
-      <button id="auth-btn">连接</button>
-    </div>
-  </header>
+<header class="topbar">
+  <div class="brand">
+    <span class="seal">莉</span>
+    <span>Sibyllina</span>
+    <span class="zh">· 西比莉娜的工房</span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-view="chat">对话</button>
+    <button class="tab" data-view="prompts">提示词</button>
+  </nav>
+  <div class="grow"></div>
+  <div class="auth-card" id="auth-card">
+    <span class="status-dot" id="status-dot" title="未连接"></span>
+    <input type="password" id="api-key" placeholder="Anthropic API Key" autocomplete="off">
+    <select id="model-select">
+      <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+      <option value="claude-opus-4-7">Opus 4.7</option>
+      <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+    </select>
+    <button id="auth-btn">连接</button>
+  </div>
+</header>
+
+<div class="view view-chat active" id="view-chat">
 
   <aside class="sidebar">
     <h3>会话 <button id="new-session">新建</button></h3>
@@ -517,6 +699,29 @@
     <div id="chunks"></div>
     <div class="usage" id="usage" style="display:none;"></div>
   </aside>
+</div>
+
+<div class="view view-prompts" id="view-prompts">
+  <div class="prompts-page">
+    <div class="prompts-banner">
+      <span class="seal">!</span>
+      <div class="text">
+        <strong>本地编辑，不会推到 GitHub。</strong>
+        修改保存在 <code>prompt_overrides/</code> 下（已加入 .gitignore）。
+        点 <em>应用</em> 立即生效到下一轮对话；可随时一键<em>下载覆盖</em>带走，或<em>上传覆盖</em>还原。
+      </div>
+    </div>
+
+    <div class="prompts-toolbar">
+      <div class="status" id="prompts-status">已覆盖 0 / 0 个组件</div>
+      <button id="prompts-download" class="primary">下载覆盖</button>
+      <button id="prompts-upload">上传覆盖</button>
+      <input type="file" id="prompts-upload-file" accept="application/json,.json" style="display:none">
+      <button id="prompts-reset-all" class="danger">全部重置</button>
+    </div>
+
+    <div id="prompts-list"></div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -851,6 +1056,195 @@ $('input').addEventListener('keydown', (e) => {
 $('input').addEventListener('input', (e) => {
   e.target.style.height = 'auto';
   e.target.style.height = Math.min(160, e.target.scrollHeight) + 'px';
+});
+
+// ---------- Tabs ----------
+function switchView(view) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const el = document.getElementById('view-' + view);
+  if (el) el.classList.add('active');
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.view === view);
+  });
+  if (view === 'prompts' && !state.promptsLoaded) {
+    loadPrompts();
+  }
+}
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => switchView(t.dataset.view));
+});
+
+// ---------- Prompts editor ----------
+state.promptsLoaded = false;
+state.promptsCache = [];
+
+async function loadPrompts() {
+  try {
+    const data = await api('/api/prompts');
+    state.promptsCache = data.components;
+    renderPromptsList(data.components);
+    updatePromptsStatus(data.override_count, data.components.length);
+    state.promptsLoaded = true;
+  } catch (e) {
+    toast('加载提示词失败：' + e.message);
+  }
+}
+
+function updatePromptsStatus(overrideCount, total) {
+  const el = $('prompts-status');
+  if (overrideCount === 0) {
+    el.innerHTML = `共 ${total} 个组件，<strong>全部默认</strong>`;
+  } else {
+    el.innerHTML = `共 ${total} 个组件，<strong>已覆盖 ${overrideCount}</strong> 个（其余使用默认）`;
+  }
+}
+
+function renderPromptsList(components) {
+  const root = $('prompts-list');
+  root.innerHTML = '';
+  for (const c of components) {
+    const card = document.createElement('div');
+    card.className = 'prompt-card' + (c.overridden ? ' overridden' : '');
+    card.dataset.key = c.key;
+    const badge = c.overridden ? '已覆盖' : '默认';
+    card.innerHTML = `
+      <div class="prompt-card-head">
+        <span class="label"></span>
+        <span class="key"></span>
+        <span class="badge">${badge}</span>
+      </div>
+      <div class="prompt-card-hint"></div>
+      <textarea spellcheck="false"></textarea>
+      <div class="prompt-card-foot">
+        <span class="dirty"></span>
+        <button class="reset" title="清除覆盖，恢复仓库默认">重置</button>
+        <button class="apply primary" disabled>应用</button>
+      </div>
+    `;
+    card.querySelector('.label').textContent = c.label;
+    card.querySelector('.key').textContent = `[${c.source}] ${c.key}`;
+    card.querySelector('.prompt-card-hint').textContent = c.hint || '';
+    const ta = card.querySelector('textarea');
+    const apply = card.querySelector('.apply');
+    const reset = card.querySelector('.reset');
+    const dirty = card.querySelector('.dirty');
+    ta.value = c.current;
+    ta.dataset.serverValue = c.current;
+    ta.dataset.defaultValue = c.default;
+
+    const updateDirty = () => {
+      const isDirty = ta.value !== ta.dataset.serverValue;
+      apply.disabled = !isDirty;
+      dirty.textContent = isDirty ? '· 未应用' : '';
+      dirty.classList.toggle('show', isDirty);
+    };
+    ta.addEventListener('input', updateDirty);
+
+    apply.addEventListener('click', async () => {
+      apply.disabled = true;
+      try {
+        const r = await api('/api/prompts/' + encodeURIComponent(c.key), {
+          method: 'PUT',
+          body: JSON.stringify({ content: ta.value }),
+        });
+        ta.dataset.serverValue = ta.value;
+        // The server treats equal-to-default as a reset.
+        const isOverride = r.overridden;
+        card.classList.toggle('overridden', isOverride);
+        card.querySelector('.badge').textContent = isOverride ? '已覆盖' : '默认';
+        updateDirty();
+        toast('已应用');
+        // Refresh status counts (one extra round-trip — cheap).
+        const d = await api('/api/prompts');
+        state.promptsCache = d.components;
+        updatePromptsStatus(d.override_count, d.components.length);
+      } catch (e) {
+        toast('应用失败：' + e.message);
+        apply.disabled = false;
+      }
+    });
+
+    reset.addEventListener('click', async () => {
+      if (!c.overridden && ta.value === ta.dataset.defaultValue) {
+        toast('当前就是默认值。');
+        return;
+      }
+      if (!confirm(`将 "${c.label}" 恢复为默认？\n（textarea 内容会被替换为仓库默认值）`)) return;
+      try {
+        await api('/api/prompts/' + encodeURIComponent(c.key), { method: 'DELETE' });
+        ta.value = ta.dataset.defaultValue;
+        ta.dataset.serverValue = ta.dataset.defaultValue;
+        card.classList.remove('overridden');
+        card.querySelector('.badge').textContent = '默认';
+        updateDirty();
+        toast('已重置');
+        const d = await api('/api/prompts');
+        state.promptsCache = d.components;
+        updatePromptsStatus(d.override_count, d.components.length);
+      } catch (e) {
+        toast('重置失败：' + e.message);
+      }
+    });
+
+    root.appendChild(card);
+  }
+}
+
+$('prompts-download').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = '/api/prompts/export';
+  a.download = 'prompt_overrides.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+
+$('prompts-upload').addEventListener('click', () => {
+  $('prompts-upload-file').click();
+});
+
+$('prompts-upload-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';  // allow re-uploading the same file later
+  try {
+    const text = await file.text();
+    let data;
+    try { data = JSON.parse(text); } catch (_) {
+      toast('文件不是合法 JSON。');
+      return;
+    }
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+      toast('JSON 顶层应为 { key: content, ... } 对象。');
+      return;
+    }
+    if (!confirm(`上传将替换当前所有覆盖（${Object.keys(data).length} 个 key）。继续？`)) return;
+    const r = await api('/api/prompts/import', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    state.promptsLoaded = false;
+    await loadPrompts();
+    let msg = `已导入 ${r.imported.length} 个组件。`;
+    if (r.ignored && r.ignored.length) msg += ` 忽略未知键：${r.ignored.join(', ')}`;
+    toast(msg, 3500);
+  } catch (err) {
+    toast('上传失败：' + err.message);
+  }
+});
+
+$('prompts-reset-all').addEventListener('click', async () => {
+  const total = state.promptsCache.filter(c => c.overridden).length;
+  if (total === 0) { toast('当前没有任何覆盖。'); return; }
+  if (!confirm(`清除全部 ${total} 个覆盖，所有组件恢复仓库默认？`)) return;
+  try {
+    await api('/api/prompts/reset-all', { method: 'POST' });
+    state.promptsLoaded = false;
+    await loadPrompts();
+    toast('已全部重置');
+  } catch (e) {
+    toast('重置失败：' + e.message);
+  }
 });
 
 (async function init() {
