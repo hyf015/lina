@@ -378,7 +378,95 @@
     font-size: 10px;
   }
   .state-bar .mood-chip { font-size: 11px; padding: 2px 9px; }
-  .state-bar.empty { color: var(--ink-faint); font-style: italic; }
+  .state-bar.empty .state-display-empty { display: inline; }
+  .state-bar .state-display-empty { display: none; font-style: italic; }
+
+  .state-bar .grow { flex: 1; min-width: 8px; }
+  .state-bar button.state-edit-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    padding: 3px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .state-bar button.state-edit-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .state-forced {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(176,132,56,0.20);
+    border: 1px solid rgba(176,132,56,0.50);
+    border-radius: 10px;
+    padding: 2px 8px 2px 10px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink);
+  }
+  .state-forced .bolt { color: var(--gold); font-weight: 600; }
+  .state-forced .desc { font-family: "Noto Serif SC", serif; font-size: 11px; }
+  .state-forced .clear {
+    background: transparent; border: none;
+    color: var(--ink-soft); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 2px;
+  }
+  .state-forced .clear:hover { color: var(--accent); }
+
+  .state-edit-form {
+    display: none;
+    align-items: center; gap: 6px;
+    width: 100%;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+  .state-bar.editing .state-edit-form { display: flex; }
+  .state-bar.editing .state-display,
+  .state-bar.editing .state-forced,
+  .state-bar.editing .state-edit-btn { display: none; }
+  .state-edit-form .field {
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .state-edit-form .field label {
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 10px;
+    color: var(--ink-faint);
+  }
+  .state-edit-form input {
+    border: 1px solid var(--line);
+    background: var(--parchment);
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 12px;
+    color: var(--ink);
+    outline: none;
+  }
+  .state-edit-form input:focus { border-color: var(--accent-soft); }
+  .state-edit-form input[type="text"] { width: 90px; }
+  .state-edit-form input[type="number"] { width: 50px; }
+  .state-edit-form button {
+    border: 1px solid var(--line);
+    background: var(--parchment);
+    color: var(--ink-soft);
+    border-radius: 3px;
+    padding: 3px 10px;
+    font-family: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+  .state-edit-form button.apply {
+    background: var(--accent); color: var(--parchment); border-color: var(--accent);
+  }
+  .state-edit-form button.apply:hover { background: var(--ink); border-color: var(--ink); }
+  .state-edit-form button:hover { border-color: var(--accent); color: var(--accent); }
+  .state-edit-form .hint {
+    font-size: 10px; color: var(--ink-faint); font-style: italic;
+    margin-left: auto;
+  }
 
   .typing {
     display: inline-flex; gap: 4px; align-items: center;
@@ -965,7 +1053,25 @@
 
     <div class="state-bar empty" id="state-bar">
       <span class="label">当前状态</span>
-      <span id="state-content">尚无</span>
+      <span class="state-display" id="state-content"></span>
+      <span class="state-display-empty">尚无</span>
+      <span class="state-forced" id="state-forced-pill" style="display:none">
+        <span class="bolt">⚡</span>
+        <span>下一轮:</span>
+        <span class="desc" id="state-forced-desc"></span>
+        <button class="clear" id="state-forced-clear" title="取消调整">×</button>
+      </span>
+      <span class="grow"></span>
+      <button class="state-edit-btn" id="state-edit-btn" title="手动设定下一轮的情绪/信任">调整</button>
+
+      <div class="state-edit-form" id="state-edit-form">
+        <span class="field"><label>情绪</label><input type="text" id="forced-mood" maxlength="40" placeholder="温和/警觉…"></span>
+        <span class="field"><label>强度</label><input type="number" id="forced-intensity" min="1" max="10"></span>
+        <span class="field"><label>信任</label><input type="number" id="forced-trust" min="1" max="10"></span>
+        <button class="apply" id="state-apply">应用</button>
+        <button id="state-cancel">取消</button>
+        <span class="hint">留空 = 沿用上一轮 · 一次性，下一轮后失效</span>
+      </div>
     </div>
 
     <div class="messages" id="messages">
@@ -1185,7 +1291,10 @@ async function selectSession(id) {
   const data = await api(`/api/sessions/${encodeURIComponent(id)}`);
   $('session-meta').textContent = `会话：${data.session_id}`;
   syncPromptSelect(data.prompt_version_id, data.prompt_version_missing, true);
+  state.lastMeta = data.last_meta || null;
   renderMessages(data.messages);
+  renderForcedPill(data.forced_state);
+  closeStateEditor();
   renderSessions();
   $('chunks').innerHTML = '<div style="color: var(--ink-faint); font-size: 12px; font-style: italic;">发送消息后这里会出现 RAG 检索到的片段。</div>';
   $('usage').style.display = 'none';
@@ -1243,11 +1352,77 @@ function renderStateBar(meta) {
   const content = $('state-content');
   if (!meta) {
     bar.classList.add('empty');
-    content.textContent = '尚无';
+    content.innerHTML = '';
     return;
   }
   bar.classList.remove('empty');
   content.innerHTML = moodChipHTML(meta);
+}
+
+function renderForcedPill(forced) {
+  const pill = $('state-forced-pill');
+  const desc = $('state-forced-desc');
+  if (!forced || Object.keys(forced).length === 0) {
+    pill.style.display = 'none';
+    state.forcedState = null;
+    return;
+  }
+  state.forcedState = forced;
+  const parts = [];
+  if (forced.mood) parts.push(forced.mood);
+  if (forced.intensity != null) parts.push('强度 ' + forced.intensity);
+  if (forced.trust != null) parts.push('信任 ' + forced.trust);
+  desc.textContent = parts.join(' · ');
+  pill.style.display = 'inline-flex';
+}
+
+async function patchForcedState(payload) {
+  if (!state.currentSession) return;
+  try {
+    const r = await api(`/api/sessions/${encodeURIComponent(state.currentSession)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ forced_state: payload }),
+    });
+    renderForcedPill(r.forced_state);
+  } catch (e) {
+    toast('设置失败：' + e.message);
+  }
+}
+
+function openStateEditor() {
+  if (!state.currentSession) { toast('请先选择会话。'); return; }
+  const bar = $('state-bar');
+  bar.classList.add('editing');
+  // Prefill: prefer the pending forced_state, then last meta.
+  const src = state.forcedState || state.lastMeta || {};
+  $('forced-mood').value = src.mood || '';
+  $('forced-intensity').value = src.intensity != null ? src.intensity : '';
+  $('forced-trust').value = src.trust != null ? src.trust : '';
+  setTimeout(() => $('forced-mood').focus(), 0);
+}
+
+function closeStateEditor() {
+  $('state-bar').classList.remove('editing');
+}
+
+async function applyStateEditor() {
+  const mood = $('forced-mood').value.trim();
+  const intRaw = $('forced-intensity').value.trim();
+  const trustRaw = $('forced-trust').value.trim();
+  const payload = {};
+  if (mood) payload.mood = mood;
+  if (intRaw !== '') payload.intensity = parseInt(intRaw, 10);
+  if (trustRaw !== '') payload.trust = parseInt(trustRaw, 10);
+  if (Object.keys(payload).length === 0) {
+    // Treating "all empty" as a clear is the most intuitive outcome.
+    await patchForcedState(null);
+    closeStateEditor();
+    toast('已清除调整。');
+    return;
+  }
+  await patchForcedState(payload);
+  closeStateEditor();
+  toast('已设置，下一轮生效。');
 }
 
 function appendMessage(role, content, opts = {}) {
@@ -1373,6 +1548,8 @@ async function send() {
     typingEl.querySelector('.content').textContent = data.reply;
     setBubbleMood(typingEl, data.mood);
     renderStateBar(data.mood);
+    renderForcedPill(data.forced_state);  // None after consumption clears the pill
+    state.lastMeta = data.mood || state.lastMeta;
     renderChunks(data.retrieved, data.retrieved_history);
     renderUsage(data.usage);
     await loadSessions();
@@ -1429,6 +1606,17 @@ $('export-btn').addEventListener('click', () => {
 
 $('session-prompt-select').addEventListener('change', (e) => {
   patchSessionPin(e.target.value || null);
+});
+
+$('state-edit-btn').addEventListener('click', openStateEditor);
+$('state-cancel').addEventListener('click', closeStateEditor);
+$('state-apply').addEventListener('click', applyStateEditor);
+$('state-forced-clear').addEventListener('click', () => patchForcedState(null));
+['forced-mood', 'forced-intensity', 'forced-trust'].forEach(id => {
+  $(id).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); applyStateEditor(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeStateEditor(); }
+  });
 });
 
 $('input').addEventListener('keydown', (e) => {

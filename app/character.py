@@ -361,18 +361,29 @@ class CharacterEngine:
         retrieved: list[Chunk],
         retrieved_history: list[Chunk],
         prior_mood: dict | None,
+        is_forced: bool = False,
     ) -> str:
         sections: list[str] = []
 
         if prior_mood:
-            sections.append(
-                "<近况 — 莉娜目前的状态，影响这一轮的回复>\n"
-                f"上一轮情绪：{prior_mood.get('mood', '?')} / 强度 {prior_mood.get('intensity', '?')}\n"
-                f"当前对该用户的信任度：{prior_mood.get('trust', '?')} / 10\n"
-                "请从这个状态出发，让本轮回复带着上一轮的情绪余韵；"
-                "信任度只能小幅 (±1/±2) 调整，不要突变。\n"
-                "</近况>"
-            )
+            if is_forced:
+                sections.append(
+                    "<状态强制设定 — 用户刚刚手动设定了莉娜此刻的情绪和信任度。"
+                    "请直接从这个状态出发回复，不要质疑、纠正或试图「回到上一轮的状态」。"
+                    "这一轮她就是这个状态。>\n"
+                    f"情绪：{prior_mood.get('mood', '平静')} / 强度 {prior_mood.get('intensity', 5)}\n"
+                    f"对该用户的信任度：{prior_mood.get('trust', 3)} / 10\n"
+                    "</状态强制设定>"
+                )
+            else:
+                sections.append(
+                    "<近况 — 莉娜目前的状态，影响这一轮的回复>\n"
+                    f"上一轮情绪：{prior_mood.get('mood', '?')} / 强度 {prior_mood.get('intensity', '?')}\n"
+                    f"当前对该用户的信任度：{prior_mood.get('trust', '?')} / 10\n"
+                    "请从这个状态出发，让本轮回复带着上一轮的情绪余韵；"
+                    "信任度只能小幅 (±1/±2) 调整，不要突变。\n"
+                    "</近况>"
+                )
 
         if retrieved:
             static_text = "\n\n".join(c.render() for c in retrieved)
@@ -405,8 +416,17 @@ class CharacterEngine:
         )
 
         # Read the most-recent mood tag from the conversation so the model
-        # has emotional momentum to work from.
+        # has emotional momentum to work from. If the user has manually
+        # set a forced_state, overlay it on top with sensible defaults
+        # filling any gaps.
         prior_mood = conversation.last_assistant_meta()
+        forced = conversation.forced_state
+        if forced:
+            merged = {"mood": "平静", "intensity": 5, "trust": 3}
+            if prior_mood:
+                merged.update(prior_mood)
+            merged.update(forced)
+            prior_mood = merged
 
         # Build the API messages: prior history (windowed) + new user turn.
         # For assistant turns with a stored mood, prepend the mood tag back
@@ -424,7 +444,11 @@ class CharacterEngine:
             {
                 "role": "user",
                 "content": self._build_user_content(
-                    user_message, retrieved, retrieved_history, prior_mood
+                    user_message,
+                    retrieved,
+                    retrieved_history,
+                    prior_mood,
+                    is_forced=bool(forced),
                 ),
             }
         ]
@@ -443,6 +467,9 @@ class CharacterEngine:
         # Persist user (raw) and assistant (cleaned, with mood as meta).
         conversation.add("user", user_message)
         conversation.add("assistant", cleaned_reply, meta=mood)
+        # forced_state is one-shot: consumed by the turn it influenced.
+        if forced:
+            conversation.forced_state = None
 
         usage = response.usage
         return ChatResult(

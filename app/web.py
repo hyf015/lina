@@ -240,6 +240,26 @@ def _save_overrides_to_disk(d: dict[str, str]) -> None:
     )
 
 
+def _sanitize_forced_state(fs: dict) -> dict:
+    """Whitelist + clamp the user-submitted forced_state.
+
+    Empty/invalid input yields {}, which the caller treats as a clear."""
+    cleaned: dict = {}
+    mood = fs.get("mood")
+    if isinstance(mood, str) and mood.strip():
+        cleaned["mood"] = mood.strip()[:40]
+    for k in ("intensity", "trust"):
+        v = fs.get(k)
+        if v is None or v == "":
+            continue
+        try:
+            iv = int(v)
+        except (ValueError, TypeError):
+            continue
+        cleaned[k] = max(1, min(10, iv))
+    return cleaned
+
+
 def _default_value(key: str) -> str:
     if key.endswith(".md"):
         fpath = STATIC_DIR / key
@@ -421,6 +441,8 @@ def create_app() -> Flask:
                 "prompt_version_id": conv.prompt_version_id,
                 "prompt_version_name": version_name,
                 "prompt_version_missing": version_missing,
+                "forced_state": conv.forced_state,
+                "last_meta": conv.last_assistant_meta(),
                 "messages": [m.to_dict() for m in conv.messages],
             }
         )
@@ -439,8 +461,23 @@ def create_app() -> Flask:
                 return jsonify({"ok": False, "error": "指定的版本不存在"}), 400
             else:
                 conv.prompt_version_id = v
+        if "forced_state" in data:
+            fs = data["forced_state"]
+            if fs is None:
+                conv.forced_state = None
+            elif isinstance(fs, dict):
+                cleaned = _sanitize_forced_state(fs)
+                conv.forced_state = cleaned or None
+            else:
+                return jsonify({"ok": False, "error": "forced_state 必须是对象或 null"}), 400
         _store.save(conv)
-        return jsonify({"ok": True, "prompt_version_id": conv.prompt_version_id})
+        return jsonify(
+            {
+                "ok": True,
+                "prompt_version_id": conv.prompt_version_id,
+                "forced_state": conv.forced_state,
+            }
+        )
 
     @app.route("/api/sessions/<session_id>", methods=["DELETE"])
     def delete_session(session_id: str):
@@ -506,6 +543,7 @@ def create_app() -> Flask:
                 "mood": result.mood,
                 "prompt_version_id": conv.prompt_version_id,
                 "prompt_version_fallback": "current" if pinned_version_missing else None,
+                "forced_state": conv.forced_state,  # None after one-shot consumption
                 "retrieved": [
                     {"source": c.source, "heading": c.heading, "text": c.text}
                     for c in result.retrieved

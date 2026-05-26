@@ -54,6 +54,10 @@ class Conversation:
     # session will use that version's overrides. None = use the current
     # global overrides (the editable state shown in the prompts tab).
     prompt_version_id: str | None = None
+    # One-shot manual override for the next turn's starting mood/trust.
+    # Engine merges these on top of last_assistant_meta then clears the
+    # field. {mood?: str, intensity?: int 1-10, trust?: int 1-10}
+    forced_state: dict | None = None
 
     def add(self, role: str, content: str, meta: dict | None = None) -> Message:
         msg = Message(role=role, content=content, meta=meta)
@@ -72,13 +76,16 @@ class Conversation:
         return [{"role": m.role, "content": m.content} for m in self.messages]
 
     def to_dict(self) -> dict:
-        return {
+        d: dict = {
             "session_id": self.session_id,
             "created_at": self.created_at,
             "title": self.title,
             "prompt_version_id": self.prompt_version_id,
             "messages": [m.to_dict() for m in self.messages],
         }
+        if self.forced_state:
+            d["forced_state"] = self.forced_state
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Conversation":
@@ -87,6 +94,7 @@ class Conversation:
             created_at=d.get("created_at", time.time()),
             title=d.get("title", ""),
             prompt_version_id=d.get("prompt_version_id"),
+            forced_state=d.get("forced_state"),
             messages=[Message.from_dict(m) for m in d.get("messages", [])],
         )
 
