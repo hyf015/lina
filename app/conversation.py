@@ -50,6 +50,10 @@ class Conversation:
     messages: list[Message] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     title: str = ""
+    # If set, points to a saved prompt version's id; the engine for this
+    # session will use that version's overrides. None = use the current
+    # global overrides (the editable state shown in the prompts tab).
+    prompt_version_id: str | None = None
 
     def add(self, role: str, content: str, meta: dict | None = None) -> Message:
         msg = Message(role=role, content=content, meta=meta)
@@ -72,6 +76,7 @@ class Conversation:
             "session_id": self.session_id,
             "created_at": self.created_at,
             "title": self.title,
+            "prompt_version_id": self.prompt_version_id,
             "messages": [m.to_dict() for m in self.messages],
         }
 
@@ -81,6 +86,7 @@ class Conversation:
             session_id=d["session_id"],
             created_at=d.get("created_at", time.time()),
             title=d.get("title", ""),
+            prompt_version_id=d.get("prompt_version_id"),
             messages=[Message.from_dict(m) for m in d.get("messages", [])],
         )
 
@@ -133,6 +139,7 @@ class ConversationStore:
                         "title": data.get("title", "") or "（无标题）",
                         "created_at": data.get("created_at", p.stat().st_mtime),
                         "message_count": len(data.get("messages", [])),
+                        "prompt_version_id": data.get("prompt_version_id"),
                     }
                 )
             except Exception:

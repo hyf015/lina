@@ -182,6 +182,26 @@
   }
   .session-item:hover .del { opacity: 1; }
   .session-item .del:hover { color: var(--accent); }
+  .session-item .version-pin {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.2px;
+    color: var(--accent);
+    background: rgba(122,59,42,0.08);
+    border: 1px solid rgba(122,59,42,0.25);
+    border-radius: 8px;
+    padding: 1px 6px;
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .session-item.missing-pin .version-pin {
+    color: #b53b3b;
+    border-color: rgba(181,59,59,0.4);
+    background: rgba(181,59,59,0.06);
+  }
 
   /* Main chat */
   main.chat-area {
@@ -203,6 +223,36 @@
   .chat-header .subtitle {
     font-size: 12px; color: var(--ink-faint);
     font-family: "JetBrains Mono", monospace;
+  }
+  .chat-header .pin {
+    margin-left: 14px;
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: "Cormorant Garamond", serif;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .chat-header .pin select {
+    border: 1px solid var(--line);
+    background: rgba(255,253,247,0.6);
+    border-radius: 3px;
+    padding: 3px 8px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 12.5px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink);
+    cursor: pointer;
+    outline: none;
+    max-width: 220px;
+  }
+  .chat-header .pin select:disabled { opacity: 0.4; cursor: not-allowed; }
+  .chat-header .pin select:focus { border-color: var(--accent-soft); }
+  .chat-header .pin.missing select {
+    color: #b53b3b;
+    border-color: rgba(181,59,59,0.6);
+    background: rgba(181,59,59,0.05);
   }
   .chat-header .actions { margin-left: auto; display: flex; gap: 6px; }
   .chat-header .actions button {
@@ -628,6 +678,242 @@
   }
   .prompt-card-foot button.primary:hover { background: var(--ink); border-color: var(--ink); color: var(--parchment); }
   .prompt-card-foot button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* ---------- Versions panel ---------- */
+  .versions-panel {
+    background: rgba(255,253,247,0.65);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    margin-bottom: 18px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .versions-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(176,132,56,0.06);
+  }
+  .versions-head .title {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 500;
+    font-size: 15px;
+    letter-spacing: 1px;
+    color: var(--ink);
+  }
+  .versions-head .count {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+  .versions-head .save-form {
+    margin-left: auto;
+    display: flex; gap: 6px; align-items: center;
+  }
+  .versions-head .save-form input {
+    border: 1px solid var(--line);
+    background: var(--parchment);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-family: inherit;
+    font-size: 12.5px;
+    width: 160px;
+    outline: none;
+  }
+  .versions-head .save-form input:focus { border-color: var(--accent-soft); }
+  .versions-head .save-form button {
+    background: var(--ink); color: var(--parchment); border: 1px solid var(--ink);
+    padding: 5px 12px; font-family: inherit; font-size: 12.5px;
+    border-radius: 3px; cursor: pointer;
+  }
+  .versions-head .save-form button:hover { background: var(--accent); border-color: var(--accent); }
+
+  .versions-body { padding: 4px 0; }
+  .versions-empty {
+    padding: 16px 14px;
+    font-size: 12.5px; color: var(--ink-faint); font-style: italic;
+  }
+  .version-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(200,181,145,0.4);
+  }
+  .version-row:last-child { border-bottom: none; }
+  .version-row.compare-checked { background: rgba(122,59,42,0.06); }
+  .version-row .check {
+    width: 16px; height: 16px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .version-row .info { flex: 1; min-width: 0; }
+  .version-row .name {
+    font-family: "Noto Serif SC", serif;
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .version-row .meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-faint);
+  }
+  .version-row .meta .note { font-family: "Noto Serif SC", serif; font-style: italic; }
+  .version-row .actions { display: flex; gap: 4px; }
+  .version-row .actions button {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    padding: 3px 8px;
+    font-family: inherit;
+    font-size: 11.5px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .version-row .actions button:hover { border-color: var(--accent); color: var(--accent); }
+  .version-row .actions button.danger:hover { border-color: #b53b3b; color: #b53b3b; }
+
+  .compare-bar {
+    display: none;
+    align-items: center; gap: 10px;
+    padding: 8px 14px;
+    background: rgba(122,59,42,0.08);
+    border-top: 1px solid var(--line);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+  .compare-bar.show { display: flex; }
+  .compare-bar .names {
+    flex: 1;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11.5px;
+  }
+  .compare-bar button {
+    background: var(--accent); color: var(--parchment); border: 1px solid var(--accent);
+    padding: 4px 12px; font-family: inherit; font-size: 12px; border-radius: 3px; cursor: pointer;
+  }
+  .compare-bar button.secondary {
+    background: transparent; color: var(--ink-soft); border-color: var(--line);
+  }
+  .compare-bar button:hover { background: var(--ink); border-color: var(--ink); color: var(--parchment); }
+
+  /* ---------- Diff modal ---------- */
+  .modal {
+    position: fixed; inset: 0;
+    background: rgba(43, 33, 24, 0.55);
+    display: none;
+    z-index: 100;
+    align-items: stretch;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal.active { display: flex; }
+  .modal-card {
+    background: var(--parchment);
+    width: 100%;
+    max-width: 1400px;
+    display: flex; flex-direction: column;
+    border-radius: 8px;
+    box-shadow: var(--shadow-deep);
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+  .modal-head {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,255,255,0));
+  }
+  .modal-title {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 500;
+    font-size: 19px;
+  }
+  .modal-head .versus {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+  .modal-head .versus .v-a { color: var(--accent); }
+  .modal-head .versus .v-b { color: #2d6a3d; }
+  .modal-head label {
+    margin-left: auto;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    display: inline-flex; align-items: center; gap: 6px;
+    cursor: pointer;
+  }
+  .modal-close {
+    background: transparent; border: none;
+    color: var(--ink-soft);
+    font-size: 22px;
+    width: 32px; height: 32px;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .modal-close:hover { background: rgba(0,0,0,0.05); color: var(--accent); }
+  .modal-body {
+    flex: 1; overflow-y: auto;
+    padding: 12px 18px 18px;
+  }
+
+  .diff-block {
+    margin-bottom: 22px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+    background: rgba(255,253,247,0.4);
+  }
+  .diff-block.no-change { display: none; }
+  body.show-unchanged .diff-block.no-change { display: block; opacity: 0.55; }
+  .diff-block-head {
+    padding: 8px 12px;
+    background: rgba(176,132,56,0.10);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .diff-block-head .h-label {
+    font-family: "Cormorant Garamond", "Noto Serif SC", serif;
+    font-size: 14.5px; font-weight: 500;
+  }
+  .diff-block-head .h-key {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-faint);
+  }
+  .diff-block-head .h-status {
+    margin-left: auto;
+    font-family: "Cormorant Garamond", serif;
+    font-size: 10.5px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .diff-block-head .h-status.changed { color: var(--accent); }
+
+  .diff-rows {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11.5px;
+    line-height: 1.55;
+    background: rgba(255,253,247,0.85);
+  }
+  .diff-cell {
+    padding: 2px 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border-top: 1px solid rgba(0,0,0,0.04);
+  }
+  .diff-cell.col-a { border-right: 1px solid rgba(0,0,0,0.06); }
+  .diff-cell.eq { color: var(--ink-soft); }
+  .diff-cell.del { background: rgba(180,60,60,0.14); color: var(--ink); }
+  .diff-cell.add { background: rgba(60,140,80,0.14); color: var(--ink); }
+  .diff-cell.sub-a { background: rgba(180,60,60,0.08); color: var(--ink); }
+  .diff-cell.sub-b { background: rgba(60,140,80,0.08); color: var(--ink); }
+  .diff-cell.empty { background: rgba(0,0,0,0.025); color: transparent; min-height: 1.5em; }
+  .diff-block-empty {
+    padding: 14px; font-size: 12.5px; color: var(--ink-faint); font-style: italic; text-align: center;
+  }
 </style>
 </head>
 <body>
@@ -665,6 +951,12 @@
     <div class="chat-header">
       <span class="title">炼金工房</span>
       <span class="subtitle" id="session-meta">尚未选择会话</span>
+      <div class="pin" id="session-prompt-pin" title="本会话使用的提示词版本">
+        <span>提示词</span>
+        <select id="session-prompt-select" disabled>
+          <option value="">当前编辑中</option>
+        </select>
+      </div>
       <div class="actions">
         <button id="export-btn" title="下载当前会话 JSON">下载</button>
         <button id="reset-btn" title="清空当前会话历史">清空历史</button>
@@ -720,7 +1012,38 @@
       <button id="prompts-reset-all" class="danger">全部重置</button>
     </div>
 
+    <div class="versions-panel">
+      <div class="versions-head">
+        <span class="title">版本快照</span>
+        <span class="count" id="versions-count">尚无</span>
+        <div class="save-form">
+          <input type="text" id="version-name" placeholder="给当前状态起个名字" maxlength="80">
+          <button id="version-save">保存为版本</button>
+        </div>
+      </div>
+      <div class="versions-body" id="versions-body">
+        <div class="versions-empty">还没有保存任何版本。点击右上角"保存为版本"开始。</div>
+      </div>
+      <div class="compare-bar" id="compare-bar">
+        <span class="names" id="compare-names"></span>
+        <button class="secondary" id="compare-clear">清空选择</button>
+        <button id="compare-go">查看对比</button>
+      </div>
+    </div>
+
     <div id="prompts-list"></div>
+  </div>
+</div>
+
+<div class="modal" id="diff-modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div class="modal-title">对比</div>
+      <div class="versus" id="diff-versus"></div>
+      <label><input type="checkbox" id="diff-show-unchanged"> 显示未变更组件</label>
+      <button class="modal-close" id="diff-close" title="关闭">×</button>
+    </div>
+    <div class="modal-body" id="diff-body"></div>
   </div>
 </div>
 
@@ -785,9 +1108,14 @@ function renderSessions() {
   }
   for (const s of state.sessions) {
     const div = document.createElement('div');
-    div.className = 'session-item' + (s.session_id === state.currentSession ? ' active' : '');
+    div.className = 'session-item' + (s.session_id === state.currentSession ? ' active' : '')
+      + (s.prompt_version_missing ? ' missing-pin' : '');
+    const pinChip = s.prompt_version_name
+      ? `<span class="version-pin" title="${escapeHtml(s.prompt_version_id || '')}">${escapeHtml(s.prompt_version_name)}</span>`
+      : '';
     div.innerHTML = `
       <span class="title">${escapeHtml(s.title || '（无标题）')}</span>
+      ${pinChip}
       <span class="count">${s.message_count}</span>
       <button class="del" title="删除">×</button>
     `;
@@ -801,16 +1129,62 @@ function renderSessions() {
       await api(`/api/sessions/${encodeURIComponent(s.session_id)}`, { method: 'DELETE' });
       if (state.currentSession === s.session_id) state.currentSession = null;
       await loadSessions();
-      if (!state.currentSession) renderMessages([]);
+      if (!state.currentSession) {
+        renderMessages([]);
+        syncPromptSelect(null, false, false);
+      }
     });
     root.appendChild(div);
   }
+}
+
+function populatePromptSelect() {
+  const sel = $('session-prompt-select');
+  const previous = sel.value;
+  // Remove any temporary "(已删除)" entry from a prior render.
+  sel.innerHTML = '';
+  const cur = document.createElement('option');
+  cur.value = '';
+  cur.textContent = '当前编辑中';
+  sel.appendChild(cur);
+  for (const v of (state.versions || [])) {
+    const opt = document.createElement('option');
+    opt.value = v.version_id;
+    opt.textContent = v.name || '（未命名）';
+    sel.appendChild(opt);
+  }
+  // Restore previously-selected value if still present.
+  if (previous && [...sel.options].some(o => o.value === previous)) {
+    sel.value = previous;
+  }
+}
+
+function syncPromptSelect(versionId, missing, enabled) {
+  const sel = $('session-prompt-select');
+  const wrapper = $('session-prompt-pin');
+  sel.disabled = enabled === false;
+  wrapper.classList.toggle('missing', !!missing);
+  if (!versionId) {
+    sel.value = '';
+    return;
+  }
+  // If the pinned version isn't in the dropdown (e.g. just-deleted), inject
+  // a transient placeholder option so the user sees the stale state.
+  if (![...sel.options].some(o => o.value === versionId)) {
+    const opt = document.createElement('option');
+    opt.value = versionId;
+    opt.textContent = missing ? '(已删除的版本)' : versionId;
+    opt.dataset.stale = '1';
+    sel.appendChild(opt);
+  }
+  sel.value = versionId;
 }
 
 async function selectSession(id) {
   state.currentSession = id;
   const data = await api(`/api/sessions/${encodeURIComponent(id)}`);
   $('session-meta').textContent = `会话：${data.session_id}`;
+  syncPromptSelect(data.prompt_version_id, data.prompt_version_missing, true);
   renderMessages(data.messages);
   renderSessions();
   $('chunks').innerHTML = '<div style="color: var(--ink-faint); font-size: 12px; font-style: italic;">发送消息后这里会出现 RAG 检索到的片段。</div>';
@@ -818,7 +1192,13 @@ async function selectSession(id) {
 }
 
 async function newSession() {
-  const data = await api('/api/sessions', { method: 'POST', body: JSON.stringify({}) });
+  // New sessions inherit the currently-displayed pin so consecutive A/B
+  // tests of the same version don't require re-selecting after every 新建.
+  const pin = $('session-prompt-select').value || null;
+  const data = await api('/api/sessions', {
+    method: 'POST',
+    body: JSON.stringify({ prompt_version_id: pin }),
+  });
   await loadSessions();
   await selectSession(data.session_id);
 }
@@ -1047,6 +1427,10 @@ $('export-btn').addEventListener('click', () => {
   a.remove();
 });
 
+$('session-prompt-select').addEventListener('change', (e) => {
+  patchSessionPin(e.target.value || null);
+});
+
 $('input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -1066,8 +1450,9 @@ function switchView(view) {
   document.querySelectorAll('.tab').forEach(t => {
     t.classList.toggle('active', t.dataset.view === view);
   });
-  if (view === 'prompts' && !state.promptsLoaded) {
-    loadPrompts();
+  if (view === 'prompts') {
+    if (!state.promptsLoaded) loadPrompts();
+    loadVersions();  // always refresh — cheap, picks up external changes
   }
 }
 document.querySelectorAll('.tab').forEach(t => {
@@ -1247,8 +1632,280 @@ $('prompts-reset-all').addEventListener('click', async () => {
   }
 });
 
+// ---------- Versions ----------
+state.versions = [];
+state.compareSelection = new Set();
+
+async function loadVersions() {
+  try {
+    const data = await api('/api/prompts/versions');
+    state.versions = data.versions || [];
+    renderVersions();
+    populatePromptSelect();
+  } catch (e) {
+    toast('加载版本失败：' + e.message);
+  }
+}
+
+async function patchSessionPin(newVal) {
+  if (!state.currentSession) return;
+  try {
+    await api(`/api/sessions/${encodeURIComponent(state.currentSession)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ prompt_version_id: newVal }),
+    });
+    const sel = $('session-prompt-select');
+    // Drop any "stale" placeholder option once the user picks a real value.
+    [...sel.options]
+      .filter(o => o.dataset.stale && o.value !== newVal)
+      .forEach(o => o.remove());
+    $('session-prompt-pin').classList.remove('missing');
+    toast('已切换提示词版本，下一轮对话起生效。');
+    await loadSessions();  // refresh the chip in the sidebar
+  } catch (err) {
+    toast('切换失败：' + err.message);
+    const data = await api(`/api/sessions/${encodeURIComponent(state.currentSession)}`);
+    syncPromptSelect(data.prompt_version_id, data.prompt_version_missing, true);
+  }
+}
+
+function formatTimestamp(ts) {
+  const d = new Date(ts * 1000);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderVersions() {
+  const body = $('versions-body');
+  const countEl = $('versions-count');
+  if (state.versions.length === 0) {
+    countEl.textContent = '尚无';
+    body.innerHTML = '<div class="versions-empty">还没有保存任何版本。点击右上角"保存为版本"开始。</div>';
+    updateCompareBar();
+    return;
+  }
+  countEl.textContent = `共 ${state.versions.length} 个`;
+  body.innerHTML = '';
+  for (const v of state.versions) {
+    const row = document.createElement('div');
+    row.className = 'version-row' + (state.compareSelection.has(v.version_id) ? ' compare-checked' : '');
+    row.innerHTML = `
+      <input type="checkbox" class="check" title="加入对比">
+      <div class="info">
+        <div class="name"></div>
+        <div class="meta">
+          <span class="ts"></span>
+          <span> · </span>
+          <span class="cnt"></span>
+          <span class="note-wrap" style="display:none"> · <span class="note"></span></span>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="restore" title="把当前覆盖替换为这个版本">恢复</button>
+        <button class="rename">重命名</button>
+        <button class="download">下载</button>
+        <button class="del danger">删除</button>
+      </div>
+    `;
+    row.querySelector('.name').textContent = v.name || '（未命名）';
+    row.querySelector('.ts').textContent = formatTimestamp(v.created_at);
+    row.querySelector('.cnt').textContent = `${v.override_count} 个覆盖`;
+    if (v.note) {
+      row.querySelector('.note-wrap').style.display = '';
+      row.querySelector('.note').textContent = v.note;
+    }
+    const cb = row.querySelector('.check');
+    cb.checked = state.compareSelection.has(v.version_id);
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        if (state.compareSelection.size >= 2) {
+          // pop the oldest selection (set preserves insertion order)
+          const first = state.compareSelection.values().next().value;
+          state.compareSelection.delete(first);
+        }
+        state.compareSelection.add(v.version_id);
+      } else {
+        state.compareSelection.delete(v.version_id);
+      }
+      renderVersions();
+    });
+    row.querySelector('.restore').addEventListener('click', async () => {
+      if (!confirm(`恢复 "${v.name}"？\n当前未保存的修改将被覆盖。`)) return;
+      try {
+        await api(`/api/prompts/versions/${encodeURIComponent(v.version_id)}/restore`, { method: 'POST' });
+        toast('已恢复');
+        state.promptsLoaded = false;
+        await loadPrompts();
+        await loadVersions();
+      } catch (e) { toast('恢复失败：' + e.message); }
+    });
+    row.querySelector('.rename').addEventListener('click', async () => {
+      const newName = prompt('新名字：', v.name || '');
+      if (newName == null) return;
+      try {
+        await api(`/api/prompts/versions/${encodeURIComponent(v.version_id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: newName }),
+        });
+        await loadVersions();
+        await loadSessions();  // refresh sidebar pin badges
+      } catch (e) { toast('重命名失败：' + e.message); }
+    });
+    row.querySelector('.download').addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.href = `/api/prompts/versions/${encodeURIComponent(v.version_id)}/export`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+    row.querySelector('.del').addEventListener('click', async () => {
+      if (!confirm(`删除版本 "${v.name}"？\n指向它的会话会回退到"当前编辑中"。`)) return;
+      try {
+        await api(`/api/prompts/versions/${encodeURIComponent(v.version_id)}`, { method: 'DELETE' });
+        state.compareSelection.delete(v.version_id);
+        await loadVersions();
+        await loadSessions();  // pinned sessions now show (已删除)
+      } catch (e) { toast('删除失败：' + e.message); }
+    });
+    body.appendChild(row);
+  }
+  updateCompareBar();
+}
+
+function updateCompareBar() {
+  const bar = $('compare-bar');
+  const sel = [...state.compareSelection];
+  if (sel.length === 0) {
+    bar.classList.remove('show');
+    return;
+  }
+  bar.classList.add('show');
+  const lookup = (id) => state.versions.find(v => v.version_id === id);
+  const names = sel.map(id => {
+    const v = lookup(id);
+    return v ? `「${v.name}」` : id;
+  }).join(' vs ');
+  $('compare-names').innerHTML = `已选 ${sel.length}/2：${escapeHtml(names)}` +
+    (sel.length === 1 ? '<span style="color: var(--ink-faint);"> · 再选一个进行对比</span>' : '');
+  $('compare-go').disabled = sel.length !== 2;
+  $('compare-go').style.opacity = sel.length === 2 ? '1' : '0.45';
+  $('compare-go').style.cursor = sel.length === 2 ? 'pointer' : 'not-allowed';
+}
+
+$('version-save').addEventListener('click', async () => {
+  const name = $('version-name').value.trim();
+  if (!name) { toast('请填写名字。'); return; }
+  try {
+    await api('/api/prompts/versions', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    $('version-name').value = '';
+    toast(`已保存为 "${name}"`);
+    await loadVersions();
+  } catch (e) { toast('保存失败：' + e.message); }
+});
+$('version-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); $('version-save').click(); }
+});
+
+$('compare-clear').addEventListener('click', () => {
+  state.compareSelection.clear();
+  renderVersions();
+});
+
+$('compare-go').addEventListener('click', async () => {
+  const sel = [...state.compareSelection];
+  if (sel.length !== 2) return;
+  try {
+    const data = await api(`/api/prompts/versions/diff?a=${encodeURIComponent(sel[0])}&b=${encodeURIComponent(sel[1])}`);
+    showDiffModal(data);
+  } catch (e) { toast('加载对比失败：' + e.message); }
+});
+
+// ---------- Diff modal ----------
+function showDiffModal(diff) {
+  const versus = $('diff-versus');
+  versus.innerHTML = `
+    <span class="v-a">A · ${escapeHtml(diff.a.name)}</span>
+    <span> vs </span>
+    <span class="v-b">B · ${escapeHtml(diff.b.name)}</span>
+  `;
+  const body = $('diff-body');
+  body.innerHTML = '';
+  const changedCount = diff.components.filter(c => c.changed).length;
+  if (changedCount === 0) {
+    body.innerHTML = '<div class="diff-block-empty">两个版本完全相同。</div>';
+  }
+  for (const comp of diff.components) {
+    const block = document.createElement('div');
+    block.className = 'diff-block' + (comp.changed ? '' : ' no-change');
+    block.innerHTML = `
+      <div class="diff-block-head">
+        <span class="h-label"></span>
+        <span class="h-key"></span>
+        <span class="h-status ${comp.changed ? 'changed' : ''}"></span>
+      </div>
+      <div class="diff-rows"></div>
+    `;
+    block.querySelector('.h-label').textContent = comp.label;
+    block.querySelector('.h-key').textContent = `${comp.source} · ${comp.key}`;
+    let statusText = '未变更';
+    if (comp.changed) {
+      const aOnly = !comp.b_overridden && comp.a_overridden ? ' (B 用默认)' : '';
+      const bOnly = !comp.a_overridden && comp.b_overridden ? ' (A 用默认)' : '';
+      statusText = '有差异' + aOnly + bOnly;
+    }
+    block.querySelector('.h-status').textContent = statusText;
+    const rows = block.querySelector('.diff-rows');
+    if (comp.changed) {
+      for (const r of comp.rows) {
+        const cellA = document.createElement('div');
+        cellA.className = 'diff-cell col-a';
+        const cellB = document.createElement('div');
+        cellB.className = 'diff-cell col-b';
+        if (r.type === 'eq') {
+          cellA.classList.add('eq'); cellA.textContent = r.a || '';
+          cellB.classList.add('eq'); cellB.textContent = r.b || '';
+        } else if (r.type === 'del') {
+          cellA.classList.add('del'); cellA.textContent = r.a || '';
+          cellB.classList.add('empty'); cellB.textContent = '·';
+        } else if (r.type === 'add') {
+          cellA.classList.add('empty'); cellA.textContent = '·';
+          cellB.classList.add('add'); cellB.textContent = r.b || '';
+        } else {  // sub
+          if (r.a == null) {
+            cellA.classList.add('empty'); cellA.textContent = '·';
+          } else { cellA.classList.add('sub-a'); cellA.textContent = r.a; }
+          if (r.b == null) {
+            cellB.classList.add('empty'); cellB.textContent = '·';
+          } else { cellB.classList.add('sub-b'); cellB.textContent = r.b; }
+        }
+        rows.appendChild(cellA);
+        rows.appendChild(cellB);
+      }
+    }
+    body.appendChild(block);
+  }
+  $('diff-modal').classList.add('active');
+}
+function closeDiffModal() {
+  $('diff-modal').classList.remove('active');
+}
+$('diff-close').addEventListener('click', closeDiffModal);
+$('diff-modal').addEventListener('click', (e) => {
+  if (e.target === $('diff-modal')) closeDiffModal();
+});
+$('diff-show-unchanged').addEventListener('change', (e) => {
+  document.body.classList.toggle('show-unchanged', e.target.checked);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('diff-modal').classList.contains('active')) closeDiffModal();
+});
+
 (async function init() {
   await refreshStatus();
+  await loadVersions();   // populate the per-session dropdown
   await loadSessions();
   if (state.sessions.length > 0) {
     await selectSession(state.sessions[0].session_id);

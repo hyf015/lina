@@ -9,8 +9,41 @@ import sys
 from pathlib import Path
 
 from .character import CharacterEngine, DEFAULT_MODEL
-from .config import CONVERSATIONS_DIR, STATIC_DIR, resolve_api_key
-from .conversation import ConversationStore
+from .config import CONVERSATIONS_DIR, PROJECT_ROOT, STATIC_DIR, resolve_api_key
+from .conversation import Conversation, ConversationStore
+
+OVERRIDES_FILE = PROJECT_ROOT / "prompt_overrides" / "current.json"
+VERSIONS_DIR = PROJECT_ROOT / "prompt_overrides" / "versions"
+
+
+def _load_overrides_for_session(conv: Conversation) -> tuple[dict, str]:
+    """Resolve a session's prompt pin to overrides + a label.
+
+    Returns (overrides_dict, label). If the pin points to a missing version,
+    falls back to the current global state and labels accordingly.
+    """
+    if conv.prompt_version_id:
+        vpath = VERSIONS_DIR / f"{conv.prompt_version_id}.json"
+        if vpath.exists():
+            try:
+                data = json.loads(vpath.read_text(encoding="utf-8"))
+                return dict(data.get("overrides", {})), f"版本 {data.get('name', conv.prompt_version_id)}"
+            except Exception:
+                pass
+        # Pin points at a missing/broken version — fall through to current.
+        if OVERRIDES_FILE.exists():
+            try:
+                return json.loads(OVERRIDES_FILE.read_text(encoding="utf-8")), "当前编辑中 (固定的版本已丢失)"
+            except Exception:
+                pass
+        return {}, "默认 (固定的版本已丢失)"
+    # No pin — current global.
+    if OVERRIDES_FILE.exists():
+        try:
+            return json.loads(OVERRIDES_FILE.read_text(encoding="utf-8")), "当前编辑中"
+        except Exception:
+            pass
+    return {}, "默认"
 
 
 HELP_TEXT = """\
@@ -68,13 +101,23 @@ def run() -> int:
 
     last_retrieved: list = []
     last_retrieved_history: list = []
+    current_pin_label = ""
 
     def _clear_context_cache() -> None:
         last_retrieved.clear()
         last_retrieved_history.clear()
 
+    def _apply_session_pin() -> None:
+        """Apply the active session's pinned overrides to the engine."""
+        nonlocal current_pin_label
+        overrides, label = _load_overrides_for_session(conv)
+        engine.apply_overrides(overrides)
+        current_pin_label = label
+
+    _apply_session_pin()
+
     print(BANNER)
-    print(f"会话ID: {conv.session_id}    模型: {engine.model}")
+    print(f"会话ID: {conv.session_id}    模型: {engine.model}    提示词: {current_pin_label}")
     if conv.messages:
         print(f"(已加载 {len(conv.messages)} 条历史消息)")
     print()
@@ -106,7 +149,8 @@ def run() -> int:
                 store.save(conv)
                 conv = store.new_session(rest or None)
                 _clear_context_cache()
-                print(f"已开启新会话: {conv.session_id}\n")
+                _apply_session_pin()
+                print(f"已开启新会话: {conv.session_id}    提示词: {current_pin_label}\n")
                 continue
             if cmd == "/load":
                 if not rest:
@@ -115,7 +159,8 @@ def run() -> int:
                 store.save(conv)
                 conv = store.load(rest)
                 _clear_context_cache()
-                print(f"已加载会话: {conv.session_id} ({len(conv.messages)} 条消息)\n")
+                _apply_session_pin()
+                print(f"已加载会话: {conv.session_id} ({len(conv.messages)} 条消息)    提示词: {current_pin_label}\n")
                 continue
             if cmd == "/list":
                 sessions = store.list_sessions()

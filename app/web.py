@@ -7,7 +7,11 @@ environment, ~/.lina_key, or the "/api/auth" endpoint at runtime.
 
 from __future__ import annotations
 
+import difflib
+import re
 import threading
+import time
+import uuid
 from pathlib import Path
 
 import json
@@ -20,7 +24,14 @@ from .config import CONVERSATIONS_DIR, PROJECT_ROOT, STATIC_DIR, resolve_api_key
 from .conversation import ConversationStore
 
 
-_engine: CharacterEngine | None = None
+# ---- Engine pool: one CharacterEngine per pinned prompt version. The
+# sentinel "_current_" represents the editable global overrides (the state
+# shown in the 提示词 tab). Engines are created lazily on first chat and
+# evicted when their underlying overrides change.
+_CURRENT_KEY = "_current_"
+_engine_pool: dict[str, CharacterEngine] = {}
+_api_key: str | None = None
+_engine_model: str = DEFAULT_MODEL
 _engine_lock = threading.Lock()
 _store = ConversationStore(CONVERSATIONS_DIR)
 
@@ -45,8 +56,168 @@ _PROMPT_KEYS = {k for k, _, _, _ in PROMPT_COMPONENTS}
 
 OVERRIDES_DIR = PROJECT_ROOT / "prompt_overrides"
 OVERRIDES_FILE = OVERRIDES_DIR / "current.json"
+VERSIONS_DIR = OVERRIDES_DIR / "versions"
 
 _overrides: dict[str, str] = {}
+_VERSION_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
+def _new_version_id() -> str:
+    """Sortable timestamp + short random suffix."""
+    return time.strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:6]
+
+
+def _version_path(version_id: str) -> Path | None:
+    if not _VERSION_ID_RE.match(version_id):
+        return None
+    return VERSIONS_DIR / f"{version_id}.json"
+
+
+def _save_version(name: str, note: str = "") -> dict:
+    """Snapshot the current overrides dict as a new version file."""
+    VERSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    vid = _new_version_id()
+    record = {
+        "version_id": vid,
+        "name": (name or "").strip()[:80] or "（未命名）",
+        "note": (note or "").strip()[:500],
+        "created_at": time.time(),
+        "overrides": dict(_overrides),
+    }
+    (VERSIONS_DIR / f"{vid}.json").write_text(
+        json.dumps(record, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return record
+
+
+def _load_version(version_id: str) -> dict | None:
+    p = _version_path(version_id)
+    if not p or not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _list_versions() -> list[dict]:
+    if not VERSIONS_DIR.exists():
+        return []
+    items: list[dict] = []
+    for p in VERSIONS_DIR.glob("*.json"):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            items.append(
+                {
+                    "version_id": data.get("version_id", p.stem),
+                    "name": data.get("name", ""),
+                    "note": data.get("note", ""),
+                    "created_at": data.get("created_at", p.stat().st_mtime),
+                    "override_count": len(data.get("overrides", {})),
+                }
+            )
+        except Exception:
+            continue
+    items.sort(key=lambda x: x["created_at"], reverse=True)
+    return items
+
+
+def _delete_version(version_id: str) -> bool:
+    p = _version_path(version_id)
+    if p and p.exists():
+        p.unlink()
+        return True
+    return False
+
+
+def _rename_version(version_id: str, name: str | None, note: str | None) -> dict | None:
+    data = _load_version(version_id)
+    if data is None:
+        return None
+    if name is not None:
+        data["name"] = name.strip()[:80] or "（未命名）"
+    if note is not None:
+        data["note"] = note.strip()[:500]
+    p = _version_path(version_id)
+    if p is None:
+        return None
+    p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return data
+
+
+def _diff_lines(a_text: str, b_text: str) -> list[dict]:
+    """Align two texts line-by-line for side-by-side rendering."""
+    a_lines = a_text.splitlines() if a_text else []
+    b_lines = b_text.splitlines() if b_text else []
+    sm = difflib.SequenceMatcher(None, a_lines, b_lines, autojunk=False)
+    rows: list[dict] = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            for k in range(i2 - i1):
+                rows.append({"a": a_lines[i1 + k], "b": b_lines[j1 + k], "type": "eq"})
+        elif tag == "replace":
+            la = a_lines[i1:i2]
+            lb = b_lines[j1:j2]
+            mx = max(len(la), len(lb))
+            for k in range(mx):
+                rows.append(
+                    {
+                        "a": la[k] if k < len(la) else None,
+                        "b": lb[k] if k < len(lb) else None,
+                        "type": "sub",
+                    }
+                )
+        elif tag == "delete":
+            for k in range(i2 - i1):
+                rows.append({"a": a_lines[i1 + k], "b": None, "type": "del"})
+        elif tag == "insert":
+            for k in range(j2 - j1):
+                rows.append({"a": None, "b": b_lines[j1 + k], "type": "add"})
+    return rows
+
+
+def _diff_versions(va: dict, vb: dict) -> dict:
+    """Per-component diff between two saved versions."""
+    overrides_a = va.get("overrides", {})
+    overrides_b = vb.get("overrides", {})
+    components: list[dict] = []
+    for key, label, source, _hint in PROMPT_COMPONENTS:
+        overridden_a = key in overrides_a
+        overridden_b = key in overrides_b
+        if not overridden_a and not overridden_b:
+            components.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "source": source,
+                    "changed": False,
+                    "a_overridden": False,
+                    "b_overridden": False,
+                    "rows": [],
+                }
+            )
+            continue
+        a_content = overrides_a.get(key, _default_value(key))
+        b_content = overrides_b.get(key, _default_value(key))
+        changed = a_content != b_content
+        components.append(
+            {
+                "key": key,
+                "label": label,
+                "source": source,
+                "changed": changed,
+                "a_overridden": overridden_a,
+                "b_overridden": overridden_b,
+                "rows": _diff_lines(a_content, b_content) if changed else [],
+            }
+        )
+    meta = lambda v: {
+        "version_id": v.get("version_id"),
+        "name": v.get("name", ""),
+        "created_at": v.get("created_at", 0),
+    }
+    return {"a": meta(va), "b": meta(vb), "components": components}
 
 
 def _load_overrides_from_disk() -> dict[str, str]:
@@ -80,26 +251,71 @@ def _default_value(key: str) -> str:
     }.get(key, "")
 
 
-def _get_engine() -> CharacterEngine | None:
-    return _engine
+def _engine_ready() -> bool:
+    return _api_key is not None
 
 
-def _init_engine(api_key: str, model: str = DEFAULT_MODEL) -> CharacterEngine:
-    global _engine
+def _set_credentials(api_key: str, model: str = DEFAULT_MODEL) -> None:
+    """Set/replace credentials and clear the pool. Engines will be lazily
+    re-created on first chat against each version."""
+    global _api_key, _engine_model
     with _engine_lock:
-        _engine = CharacterEngine(
-            api_key=api_key,
+        _api_key = api_key
+        _engine_model = model
+        _engine_pool.clear()
+
+
+def _overrides_for_version(version_id: str | None) -> dict[str, str]:
+    """Resolve a session's version pin to an overrides dict. None means
+    'use current global'; a deleted version also falls back to current."""
+    if version_id is None:
+        return dict(_overrides)
+    data = _load_version(version_id)
+    if data is None:
+        return dict(_overrides)
+    return dict(data.get("overrides", {}))
+
+
+def _get_or_create_engine(version_id: str | None) -> CharacterEngine | None:
+    """Returns a cached engine for this version, building it if needed."""
+    if not _engine_ready():
+        return None
+    # Normalize: a pinned version that no longer exists falls back to current.
+    key = version_id if (version_id and _load_version(version_id) is not None) else _CURRENT_KEY
+    with _engine_lock:
+        engine = _engine_pool.get(key)
+        if engine is not None:
+            return engine
+        overrides = dict(_overrides) if key == _CURRENT_KEY else _overrides_for_version(key)
+        engine = CharacterEngine(
+            api_key=_api_key,
             static_dir=STATIC_DIR,
-            model=model,
-            overrides=_overrides,
+            model=_engine_model,
+            overrides=overrides,
         )
-    return _engine
+        _engine_pool[key] = engine
+        return engine
 
 
-def _reapply_overrides_to_engine() -> None:
-    if _engine is not None:
-        with _engine_lock:
-            _engine.apply_overrides(_overrides)
+def _invalidate_current_engine() -> None:
+    """Drop the engine that's using the editable global state. Called after
+    any mutation of _overrides."""
+    with _engine_lock:
+        _engine_pool.pop(_CURRENT_KEY, None)
+
+
+def _invalidate_engine(version_id: str) -> None:
+    with _engine_lock:
+        _engine_pool.pop(version_id, None)
+
+
+def _peek_active_engine() -> CharacterEngine | None:
+    """Returns any engine in the pool, used only for /api/status display of
+    the current model. May be None if no chat has happened yet."""
+    with _engine_lock:
+        for v in _engine_pool.values():
+            return v
+        return None
 
 
 def create_app() -> Flask:
@@ -113,13 +329,11 @@ def create_app() -> Flask:
     global _overrides
     _overrides = _load_overrides_from_disk()
 
-    # Eager-init if we already have a key on disk / env.
+    # Pick up an API key from env / keyfile if present. Engines are
+    # created lazily per pinned version on the first chat.
     existing_key = resolve_api_key()
     if existing_key:
-        try:
-            _init_engine(existing_key)
-        except Exception as e:
-            app.logger.warning(f"Auto-init failed: {e}")
+        _set_credentials(existing_key)
 
     @app.route("/")
     def index():
@@ -127,11 +341,10 @@ def create_app() -> Flask:
 
     @app.route("/api/status")
     def status():
-        engine = _get_engine()
         return jsonify(
             {
-                "ready": engine is not None,
-                "model": engine.model if engine else None,
+                "ready": _engine_ready(),
+                "model": _engine_model if _engine_ready() else None,
                 "default_model": DEFAULT_MODEL,
             }
         )
@@ -143,33 +356,91 @@ def create_app() -> Flask:
         model = (data.get("model") or DEFAULT_MODEL).strip() or DEFAULT_MODEL
         if not key:
             return jsonify({"ok": False, "error": "缺少 api_key"}), 400
-        try:
-            _init_engine(key, model=model)
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+        _set_credentials(key, model=model)
         return jsonify({"ok": True, "model": model})
+
+    def _enrich_sessions(sessions: list[dict]) -> list[dict]:
+        """Attach resolved prompt-version names so the UI can label sessions
+        without an extra lookup."""
+        versions_by_id = {v["version_id"]: v for v in _list_versions()}
+        for s in sessions:
+            vid = s.get("prompt_version_id")
+            if vid is None:
+                s["prompt_version_name"] = None
+                s["prompt_version_missing"] = False
+            elif vid in versions_by_id:
+                s["prompt_version_name"] = versions_by_id[vid]["name"]
+                s["prompt_version_missing"] = False
+            else:
+                s["prompt_version_name"] = "(已删除)"
+                s["prompt_version_missing"] = True
+        return sessions
 
     @app.route("/api/sessions", methods=["GET"])
     def list_sessions():
-        return jsonify({"sessions": _store.list_sessions()})
+        return jsonify({"sessions": _enrich_sessions(_store.list_sessions())})
 
     @app.route("/api/sessions", methods=["POST"])
     def new_session():
         data = request.get_json(force=True, silent=True) or {}
         requested = (data.get("session_id") or "").strip() or None
+        version_id = data.get("prompt_version_id")
+        if isinstance(version_id, str):
+            version_id = version_id.strip() or None
+        else:
+            version_id = None
+        if version_id is not None and _load_version(version_id) is None:
+            return jsonify({"ok": False, "error": "指定的版本不存在"}), 400
         conv = _store.new_session(requested)
-        return jsonify({"session_id": conv.session_id, "messages": []})
+        conv.prompt_version_id = version_id
+        _store.save(conv)
+        return jsonify(
+            {
+                "session_id": conv.session_id,
+                "messages": [],
+                "prompt_version_id": conv.prompt_version_id,
+            }
+        )
 
     @app.route("/api/sessions/<session_id>", methods=["GET"])
     def get_session(session_id: str):
         conv = _store.load(session_id)
+        version_name = None
+        version_missing = False
+        if conv.prompt_version_id:
+            v = _load_version(conv.prompt_version_id)
+            if v is None:
+                version_name = "(已删除)"
+                version_missing = True
+            else:
+                version_name = v.get("name", "")
         return jsonify(
             {
                 "session_id": conv.session_id,
                 "title": conv.title,
+                "prompt_version_id": conv.prompt_version_id,
+                "prompt_version_name": version_name,
+                "prompt_version_missing": version_missing,
                 "messages": [m.to_dict() for m in conv.messages],
             }
         )
+
+    @app.route("/api/sessions/<session_id>", methods=["PATCH"])
+    def patch_session(session_id: str):
+        data = request.get_json(force=True, silent=True) or {}
+        conv = _store.load(session_id)
+        if "prompt_version_id" in data:
+            v = data["prompt_version_id"]
+            if v is None or (isinstance(v, str) and v.strip() == ""):
+                conv.prompt_version_id = None
+            elif not isinstance(v, str):
+                return jsonify({"ok": False, "error": "prompt_version_id 必须是字符串或 null"}), 400
+            elif _load_version(v) is None:
+                return jsonify({"ok": False, "error": "指定的版本不存在"}), 400
+            else:
+                conv.prompt_version_id = v
+        _store.save(conv)
+        return jsonify({"ok": True, "prompt_version_id": conv.prompt_version_id})
 
     @app.route("/api/sessions/<session_id>", methods=["DELETE"])
     def delete_session(session_id: str):
@@ -200,8 +471,7 @@ def create_app() -> Flask:
 
     @app.route("/api/chat", methods=["POST"])
     def chat():
-        engine = _get_engine()
-        if engine is None:
+        if not _engine_ready():
             return jsonify({"ok": False, "error": "请先在右上角输入 Anthropic API Key。"}), 401
 
         data = request.get_json(force=True, silent=True) or {}
@@ -213,6 +483,16 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "消息为空"}), 400
 
         conv = _store.load(session_id)
+        # Detect a stale pin (version was deleted) so the UI can warn.
+        pinned_version_missing = (
+            conv.prompt_version_id is not None
+            and _load_version(conv.prompt_version_id) is None
+        )
+
+        engine = _get_or_create_engine(conv.prompt_version_id)
+        if engine is None:
+            return jsonify({"ok": False, "error": "引擎未就绪"}), 401
+
         try:
             result = engine.chat(conv, message)
         except Exception as e:
@@ -224,6 +504,8 @@ def create_app() -> Flask:
                 "ok": True,
                 "reply": result.text,
                 "mood": result.mood,
+                "prompt_version_id": conv.prompt_version_id,
+                "prompt_version_fallback": "current" if pinned_version_missing else None,
                 "retrieved": [
                     {"source": c.source, "heading": c.heading, "text": c.text}
                     for c in result.retrieved
@@ -277,7 +559,7 @@ def create_app() -> Flask:
         else:
             _overrides[key] = content
         _save_overrides_to_disk(_overrides)
-        _reapply_overrides_to_engine()
+        _invalidate_current_engine()
         return jsonify({"ok": True, "overridden": key in _overrides})
 
     @app.route("/api/prompts/<path:key>", methods=["DELETE"])
@@ -286,14 +568,14 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": f"未知组件: {key}"}), 400
         _overrides.pop(key, None)
         _save_overrides_to_disk(_overrides)
-        _reapply_overrides_to_engine()
+        _invalidate_current_engine()
         return jsonify({"ok": True})
 
     @app.route("/api/prompts/reset-all", methods=["POST"])
     def reset_all_prompts():
         _overrides.clear()
         _save_overrides_to_disk(_overrides)
-        _reapply_overrides_to_engine()
+        _invalidate_current_engine()
         return jsonify({"ok": True})
 
     @app.route("/api/prompts/export", methods=["GET"])
@@ -305,6 +587,91 @@ def create_app() -> Flask:
             headers={
                 "Content-Disposition": 'attachment; filename="prompt_overrides.json"',
             },
+        )
+
+    # ---------- Prompt version snapshots ----------
+
+    @app.route("/api/prompts/versions", methods=["GET"])
+    def versions_list():
+        return jsonify({"versions": _list_versions()})
+
+    @app.route("/api/prompts/versions", methods=["POST"])
+    def versions_save():
+        data = request.get_json(force=True, silent=True) or {}
+        name = data.get("name") or ""
+        note = data.get("note") or ""
+        record = _save_version(name=name, note=note)
+        return jsonify(
+            {
+                "ok": True,
+                "version": {
+                    "version_id": record["version_id"],
+                    "name": record["name"],
+                    "note": record["note"],
+                    "created_at": record["created_at"],
+                    "override_count": len(record["overrides"]),
+                },
+            }
+        )
+
+    @app.route("/api/prompts/versions/diff", methods=["GET"])
+    def versions_diff():
+        a_id = request.args.get("a", "").strip()
+        b_id = request.args.get("b", "").strip()
+        va = _load_version(a_id)
+        vb = _load_version(b_id)
+        if va is None or vb is None:
+            return jsonify({"ok": False, "error": "找不到指定的版本"}), 404
+        return jsonify(_diff_versions(va, vb))
+
+    @app.route("/api/prompts/versions/<version_id>", methods=["GET"])
+    def versions_get(version_id: str):
+        data = _load_version(version_id)
+        if data is None:
+            return jsonify({"ok": False, "error": "版本不存在"}), 404
+        return jsonify(data)
+
+    @app.route("/api/prompts/versions/<version_id>", methods=["DELETE"])
+    def versions_delete(version_id: str):
+        ok = _delete_version(version_id)
+        if not ok:
+            return jsonify({"ok": False, "error": "版本不存在"}), 404
+        _invalidate_engine(version_id)
+        return jsonify({"ok": True})
+
+    @app.route("/api/prompts/versions/<version_id>", methods=["PATCH"])
+    def versions_patch(version_id: str):
+        body = request.get_json(force=True, silent=True) or {}
+        name = body.get("name") if isinstance(body.get("name"), str) else None
+        note = body.get("note") if isinstance(body.get("note"), str) else None
+        data = _rename_version(version_id, name=name, note=note)
+        if data is None:
+            return jsonify({"ok": False, "error": "版本不存在"}), 404
+        return jsonify({"ok": True, "name": data["name"], "note": data["note"]})
+
+    @app.route("/api/prompts/versions/<version_id>/restore", methods=["POST"])
+    def versions_restore(version_id: str):
+        data = _load_version(version_id)
+        if data is None:
+            return jsonify({"ok": False, "error": "版本不存在"}), 404
+        _overrides.clear()
+        _overrides.update(data.get("overrides", {}))
+        _save_overrides_to_disk(_overrides)
+        _invalidate_current_engine()
+        return jsonify({"ok": True, "override_count": len(_overrides)})
+
+    @app.route("/api/prompts/versions/<version_id>/export", methods=["GET"])
+    def versions_export(version_id: str):
+        data = _load_version(version_id)
+        if data is None:
+            return jsonify({"ok": False, "error": "版本不存在"}), 404
+        safe_name = re.sub(r"[^A-Za-z0-9_\-]+", "_", data.get("name", "")).strip("_") or version_id
+        filename = f"prompt_version_{safe_name}.json"
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        return Response(
+            payload,
+            mimetype="application/json; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @app.route("/api/prompts/import", methods=["POST"])
@@ -320,7 +687,7 @@ def create_app() -> Flask:
         _overrides.clear()
         _overrides.update(filtered)
         _save_overrides_to_disk(_overrides)
-        _reapply_overrides_to_engine()
+        _invalidate_current_engine()
         return jsonify({"ok": True, "imported": list(filtered.keys()), "ignored": ignored})
 
     return app
