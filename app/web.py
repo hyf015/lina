@@ -285,33 +285,43 @@ def _set_credentials(api_key: str, model: str = DEFAULT_MODEL) -> None:
         _engine_pool.clear()
 
 
-def _overrides_for_version(version_id: str | None) -> dict[str, str]:
-    """Resolve a session's version pin to an overrides dict. None means
-    'use current global'; a deleted version also falls back to current."""
-    if version_id is None:
-        return dict(_overrides)
-    data = _load_version(version_id)
-    if data is None:
-        return dict(_overrides)
-    return dict(data.get("overrides", {}))
+def _effective_overrides_for(conv) -> dict[str, str]:
+    """Resolve a session to its effective overrides dict, taking mode into
+    account. Private mode uses the session's own dict; shared mode follows
+    the version pin (with a fallback to current globals if missing)."""
+    if conv.prompt_mode == "private":
+        return dict(conv.prompt_overrides or {})
+    if conv.prompt_version_id:
+        data = _load_version(conv.prompt_version_id)
+        if data is not None:
+            return dict(data.get("overrides", {}))
+    return dict(_overrides)
 
 
-def _get_or_create_engine(version_id: str | None) -> CharacterEngine | None:
-    """Returns a cached engine for this version, building it if needed."""
+def _engine_key_for(conv) -> str:
+    """Pool key. Private sessions get their own slot; shared sessions
+    collapse onto the version (or _current_)."""
+    if conv.prompt_mode == "private":
+        return f"sess:{conv.session_id}"
+    if conv.prompt_version_id and _load_version(conv.prompt_version_id) is not None:
+        return conv.prompt_version_id
+    return _CURRENT_KEY
+
+
+def _engine_for_session(conv) -> CharacterEngine | None:
+    """Returns a cached engine for this session's prompt mode/source."""
     if not _engine_ready():
         return None
-    # Normalize: a pinned version that no longer exists falls back to current.
-    key = version_id if (version_id and _load_version(version_id) is not None) else _CURRENT_KEY
+    key = _engine_key_for(conv)
     with _engine_lock:
         engine = _engine_pool.get(key)
         if engine is not None:
             return engine
-        overrides = dict(_overrides) if key == _CURRENT_KEY else _overrides_for_version(key)
         engine = CharacterEngine(
             api_key=_api_key,
             static_dir=STATIC_DIR,
             model=_engine_model,
-            overrides=overrides,
+            overrides=_effective_overrides_for(conv),
         )
         _engine_pool[key] = engine
         return engine
@@ -327,6 +337,12 @@ def _invalidate_current_engine() -> None:
 def _invalidate_engine(version_id: str) -> None:
     with _engine_lock:
         _engine_pool.pop(version_id, None)
+
+
+def _invalidate_session_engine(session_id: str) -> None:
+    """Drop the engine for a private session after its overrides change."""
+    with _engine_lock:
+        _engine_pool.pop(f"sess:{session_id}", None)
 
 
 def _peek_active_engine() -> CharacterEngine | None:
@@ -380,18 +396,27 @@ def create_app() -> Flask:
         return jsonify({"ok": True, "model": model})
 
     def _enrich_sessions(sessions: list[dict]) -> list[dict]:
-        """Attach resolved prompt-version names so the UI can label sessions
-        without an extra lookup."""
+        """Attach resolved prompt labels so the UI can render badges
+        without per-row lookups."""
         versions_by_id = {v["version_id"]: v for v in _list_versions()}
         for s in sessions:
+            mode = s.get("prompt_mode", "shared")
+            if mode == "private":
+                s["prompt_label"] = "专属"
+                s["prompt_version_name"] = None
+                s["prompt_version_missing"] = False
+                continue
             vid = s.get("prompt_version_id")
             if vid is None:
+                s["prompt_label"] = None
                 s["prompt_version_name"] = None
                 s["prompt_version_missing"] = False
             elif vid in versions_by_id:
+                s["prompt_label"] = versions_by_id[vid]["name"]
                 s["prompt_version_name"] = versions_by_id[vid]["name"]
                 s["prompt_version_missing"] = False
             else:
+                s["prompt_label"] = "(已删除)"
                 s["prompt_version_name"] = "(已删除)"
                 s["prompt_version_missing"] = True
         return sessions
@@ -422,25 +447,39 @@ def create_app() -> Flask:
             }
         )
 
-    @app.route("/api/sessions/<session_id>", methods=["GET"])
-    def get_session(session_id: str):
-        conv = _store.load(session_id)
+    def _session_payload(conv) -> dict:
         version_name = None
         version_missing = False
-        if conv.prompt_version_id:
+        if conv.prompt_mode == "shared" and conv.prompt_version_id:
             v = _load_version(conv.prompt_version_id)
             if v is None:
                 version_name = "(已删除)"
                 version_missing = True
             else:
                 version_name = v.get("name", "")
+        if conv.prompt_mode == "private":
+            label = "专属"
+        elif version_name:
+            label = version_name
+        else:
+            label = None
+        return {
+            "prompt_mode": conv.prompt_mode,
+            "prompt_version_id": conv.prompt_version_id,
+            "prompt_version_name": version_name,
+            "prompt_version_missing": version_missing,
+            "prompt_label": label,
+            "prompt_override_count": len(conv.prompt_overrides or {}),
+        }
+
+    @app.route("/api/sessions/<session_id>", methods=["GET"])
+    def get_session(session_id: str):
+        conv = _store.load(session_id)
         return jsonify(
             {
                 "session_id": conv.session_id,
                 "title": conv.title,
-                "prompt_version_id": conv.prompt_version_id,
-                "prompt_version_name": version_name,
-                "prompt_version_missing": version_missing,
+                **_session_payload(conv),
                 "forced_state": conv.forced_state,
                 "last_meta": conv.last_assistant_meta(),
                 "messages": [m.to_dict() for m in conv.messages],
@@ -451,6 +490,16 @@ def create_app() -> Flask:
     def patch_session(session_id: str):
         data = request.get_json(force=True, silent=True) or {}
         conv = _store.load(session_id)
+        if "prompt_mode" in data:
+            new_mode = data["prompt_mode"]
+            if new_mode not in ("shared", "private"):
+                return jsonify({"ok": False, "error": "prompt_mode 必须是 shared 或 private"}), 400
+            if new_mode == "private" and conv.prompt_mode != "private":
+                # Seed the session's private overrides from whatever it was
+                # using before, so the user has a baseline to tweak.
+                if conv.prompt_overrides is None:
+                    conv.prompt_overrides = _effective_overrides_for(conv)
+            conv.prompt_mode = new_mode
         if "prompt_version_id" in data:
             v = data["prompt_version_id"]
             if v is None or (isinstance(v, str) and v.strip() == ""):
@@ -471,12 +520,103 @@ def create_app() -> Flask:
             else:
                 return jsonify({"ok": False, "error": "forced_state 必须是对象或 null"}), 400
         _store.save(conv)
+        # Mode/version flip changes the effective engine; evict relevant cache.
+        _invalidate_session_engine(conv.session_id)
         return jsonify(
             {
                 "ok": True,
-                "prompt_version_id": conv.prompt_version_id,
+                **_session_payload(conv),
                 "forced_state": conv.forced_state,
             }
+        )
+
+    # ---------- Per-session prompt override editor ----------
+    # Same shape as /api/prompts/* but scoped to a single session's
+    # private prompt_overrides dict. Only meaningful in prompt_mode=private,
+    # but we don't block reads — the UI surfaces both states clearly.
+
+    @app.route("/api/sessions/<session_id>/overrides", methods=["GET"])
+    def session_overrides_list(session_id: str):
+        conv = _store.load(session_id)
+        overrides = conv.prompt_overrides or {}
+        items = []
+        for key, label, source, hint in PROMPT_COMPONENTS:
+            default = _default_value(key)
+            overridden = key in overrides
+            items.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "source": source,
+                    "hint": hint,
+                    "overridden": overridden,
+                    "current": overrides[key] if overridden else default,
+                    "default": default,
+                }
+            )
+        return jsonify(
+            {
+                "session_id": session_id,
+                "prompt_mode": conv.prompt_mode,
+                "components": items,
+                "override_count": len(overrides),
+            }
+        )
+
+    @app.route("/api/sessions/<session_id>/overrides/<path:key>", methods=["PUT"])
+    def session_override_set(session_id: str, key: str):
+        if key not in _PROMPT_KEYS:
+            return jsonify({"ok": False, "error": f"未知组件: {key}"}), 400
+        data = request.get_json(force=True, silent=True) or {}
+        content = data.get("content")
+        if not isinstance(content, str):
+            return jsonify({"ok": False, "error": "content 必须是字符串"}), 400
+        conv = _store.load(session_id)
+        overrides = dict(conv.prompt_overrides or {})
+        if content == _default_value(key):
+            overrides.pop(key, None)
+        else:
+            overrides[key] = content
+        conv.prompt_overrides = overrides or None
+        _store.save(conv)
+        _invalidate_session_engine(session_id)
+        return jsonify(
+            {
+                "ok": True,
+                "overridden": key in overrides,
+                "override_count": len(overrides),
+            }
+        )
+
+    @app.route("/api/sessions/<session_id>/overrides/<path:key>", methods=["DELETE"])
+    def session_override_clear_one(session_id: str, key: str):
+        if key not in _PROMPT_KEYS:
+            return jsonify({"ok": False, "error": f"未知组件: {key}"}), 400
+        conv = _store.load(session_id)
+        overrides = dict(conv.prompt_overrides or {})
+        overrides.pop(key, None)
+        conv.prompt_overrides = overrides or None
+        _store.save(conv)
+        _invalidate_session_engine(session_id)
+        return jsonify({"ok": True, "override_count": len(overrides)})
+
+    @app.route("/api/sessions/<session_id>/overrides/reset-all", methods=["POST"])
+    def session_override_reset_all(session_id: str):
+        conv = _store.load(session_id)
+        conv.prompt_overrides = None
+        _store.save(conv)
+        _invalidate_session_engine(session_id)
+        return jsonify({"ok": True})
+
+    @app.route("/api/sessions/<session_id>/overrides/export", methods=["GET"])
+    def session_override_export(session_id: str):
+        conv = _store.load(session_id)
+        payload = json.dumps(conv.prompt_overrides or {}, ensure_ascii=False, indent=2)
+        filename = f"prompt_overrides_{conv.session_id}.json"
+        return Response(
+            payload,
+            mimetype="application/json; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @app.route("/api/sessions/<session_id>", methods=["DELETE"])
@@ -520,13 +660,14 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "消息为空"}), 400
 
         conv = _store.load(session_id)
-        # Detect a stale pin (version was deleted) so the UI can warn.
+        # Detect a stale pin (shared mode, version deleted) so the UI can warn.
         pinned_version_missing = (
-            conv.prompt_version_id is not None
+            conv.prompt_mode == "shared"
+            and conv.prompt_version_id is not None
             and _load_version(conv.prompt_version_id) is None
         )
 
-        engine = _get_or_create_engine(conv.prompt_version_id)
+        engine = _engine_for_session(conv)
         if engine is None:
             return jsonify({"ok": False, "error": "引擎未就绪"}), 401
 

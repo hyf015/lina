@@ -202,6 +202,11 @@
     border-color: rgba(181,59,59,0.4);
     background: rgba(181,59,59,0.06);
   }
+  .session-item.private-pin .version-pin {
+    color: #2d6a3d;
+    border-color: rgba(45,106,61,0.40);
+    background: rgba(45,106,61,0.08);
+  }
 
   /* Main chat */
   main.chat-area {
@@ -254,6 +259,26 @@
     border-color: rgba(181,59,59,0.6);
     background: rgba(181,59,59,0.05);
   }
+  .chat-header .pin.private select {
+    color: #2d6a3d;
+    border-color: rgba(45,106,61,0.50);
+    background: rgba(45,106,61,0.05);
+  }
+  .chat-header .pin-edit-btn {
+    border: 1px solid rgba(45,106,61,0.50);
+    background: rgba(45,106,61,0.08);
+    color: #2d6a3d;
+    padding: 3px 9px;
+    margin-left: 4px;
+    border-radius: 3px;
+    font-family: "Cormorant Garamond", "Noto Serif SC", serif;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    display: none;
+  }
+  .chat-header .pin.private .pin-edit-btn { display: inline-block; }
+  .chat-header .pin-edit-btn:hover { background: rgba(45,106,61,0.18); }
   .chat-header .actions { margin-left: auto; display: flex; gap: 6px; }
   .chat-header .actions button {
     background: transparent; border: 1px solid var(--line);
@@ -1044,6 +1069,7 @@
         <select id="session-prompt-select" disabled>
           <option value="">当前编辑中</option>
         </select>
+        <button class="pin-edit-btn" id="session-prompt-edit-btn" title="编辑此会话独有的提示词覆盖">编辑专属</button>
       </div>
       <div class="actions">
         <button id="export-btn" title="下载当前会话 JSON">下载</button>
@@ -1141,6 +1167,24 @@
   </div>
 </div>
 
+<div class="modal" id="session-prompt-modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div class="modal-title">本会话专属提示词</div>
+      <div class="versus" id="session-prompt-modal-name"></div>
+      <button class="modal-close" id="session-prompt-modal-close" title="关闭">×</button>
+    </div>
+    <div class="prompts-toolbar" style="border-radius:0;border-left:none;border-right:none;border-top:none;margin:0;">
+      <div class="status" id="session-prompts-status">共 0 个组件</div>
+      <button id="session-prompts-download" class="primary">下载本会话覆盖</button>
+      <button id="session-prompts-reset-all" class="danger">全部重置</button>
+    </div>
+    <div class="modal-body">
+      <div id="session-prompts-list"></div>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="diff-modal">
   <div class="modal-card">
     <div class="modal-head">
@@ -1214,10 +1258,14 @@ function renderSessions() {
   }
   for (const s of state.sessions) {
     const div = document.createElement('div');
+    const isPrivate = s.prompt_mode === 'private';
     div.className = 'session-item' + (s.session_id === state.currentSession ? ' active' : '')
-      + (s.prompt_version_missing ? ' missing-pin' : '');
-    const pinChip = s.prompt_version_name
-      ? `<span class="version-pin" title="${escapeHtml(s.prompt_version_id || '')}">${escapeHtml(s.prompt_version_name)}</span>`
+      + (s.prompt_version_missing ? ' missing-pin' : '')
+      + (isPrivate ? ' private-pin' : '');
+    const label = s.prompt_label;
+    const pinTitle = isPrivate ? '本会话专属提示词（独立可编辑）' : (s.prompt_version_id || '');
+    const pinChip = label
+      ? `<span class="version-pin" title="${escapeHtml(pinTitle)}">${escapeHtml(label)}</span>`
       : '';
     div.innerHTML = `
       <span class="title">${escapeHtml(s.title || '（无标题）')}</span>
@@ -1244,14 +1292,15 @@ function renderSessions() {
   }
 }
 
+const PRIVATE_SENTINEL = '@private';
+
 function populatePromptSelect() {
   const sel = $('session-prompt-select');
   const previous = sel.value;
-  // Remove any temporary "(已删除)" entry from a prior render.
   sel.innerHTML = '';
   const cur = document.createElement('option');
   cur.value = '';
-  cur.textContent = '当前编辑中';
+  cur.textContent = '当前编辑中（共享全局）';
   sel.appendChild(cur);
   for (const v of (state.versions || [])) {
     const opt = document.createElement('option');
@@ -1259,23 +1308,33 @@ function populatePromptSelect() {
     opt.textContent = v.name || '（未命名）';
     sel.appendChild(opt);
   }
-  // Restore previously-selected value if still present.
-  if (previous && [...sel.options].some(o => o.value === previous)) {
+  const divider = document.createElement('option');
+  divider.disabled = true;
+  divider.textContent = '──────────';
+  sel.appendChild(divider);
+  const priv = document.createElement('option');
+  priv.value = PRIVATE_SENTINEL;
+  priv.textContent = '专属本会话（独立可编辑）';
+  sel.appendChild(priv);
+  if (previous && [...sel.options].some(o => o.value === previous && !o.disabled)) {
     sel.value = previous;
   }
 }
 
-function syncPromptSelect(versionId, missing, enabled) {
+function syncPromptSelect(mode, versionId, missing, enabled) {
   const sel = $('session-prompt-select');
   const wrapper = $('session-prompt-pin');
   sel.disabled = enabled === false;
   wrapper.classList.toggle('missing', !!missing);
+  wrapper.classList.toggle('private', mode === 'private');
+  if (mode === 'private') {
+    sel.value = PRIVATE_SENTINEL;
+    return;
+  }
   if (!versionId) {
     sel.value = '';
     return;
   }
-  // If the pinned version isn't in the dropdown (e.g. just-deleted), inject
-  // a transient placeholder option so the user sees the stale state.
   if (![...sel.options].some(o => o.value === versionId)) {
     const opt = document.createElement('option');
     opt.value = versionId;
@@ -1290,7 +1349,7 @@ async function selectSession(id) {
   state.currentSession = id;
   const data = await api(`/api/sessions/${encodeURIComponent(id)}`);
   $('session-meta').textContent = `会话：${data.session_id}`;
-  syncPromptSelect(data.prompt_version_id, data.prompt_version_missing, true);
+  syncPromptSelect(data.prompt_mode, data.prompt_version_id, data.prompt_version_missing, true);
   state.lastMeta = data.last_meta || null;
   renderMessages(data.messages);
   renderForcedPill(data.forced_state);
@@ -1837,23 +1896,33 @@ async function loadVersions() {
 
 async function patchSessionPin(newVal) {
   if (!state.currentSession) return;
+  let payload;
+  if (newVal === PRIVATE_SENTINEL) {
+    payload = { prompt_mode: 'private' };
+  } else {
+    payload = { prompt_mode: 'shared', prompt_version_id: newVal || null };
+  }
   try {
-    await api(`/api/sessions/${encodeURIComponent(state.currentSession)}`, {
+    const r = await api(`/api/sessions/${encodeURIComponent(state.currentSession)}`, {
       method: 'PATCH',
-      body: JSON.stringify({ prompt_version_id: newVal }),
+      body: JSON.stringify(payload),
     });
     const sel = $('session-prompt-select');
-    // Drop any "stale" placeholder option once the user picks a real value.
     [...sel.options]
       .filter(o => o.dataset.stale && o.value !== newVal)
       .forEach(o => o.remove());
     $('session-prompt-pin').classList.remove('missing');
-    toast('已切换提示词版本，下一轮对话起生效。');
-    await loadSessions();  // refresh the chip in the sidebar
+    $('session-prompt-pin').classList.toggle('private', r.prompt_mode === 'private');
+    if (r.prompt_mode === 'private') {
+      toast(`已切换为专属模式（${r.prompt_override_count} 个覆盖已就位，可点击"编辑专属"调整）`);
+    } else {
+      toast('已切换提示词版本，下一轮对话起生效。');
+    }
+    await loadSessions();
   } catch (err) {
     toast('切换失败：' + err.message);
     const data = await api(`/api/sessions/${encodeURIComponent(state.currentSession)}`);
-    syncPromptSelect(data.prompt_version_id, data.prompt_version_missing, true);
+    syncPromptSelect(data.prompt_mode, data.prompt_version_id, data.prompt_version_missing, true);
   }
 }
 
@@ -2089,6 +2158,140 @@ $('diff-show-unchanged').addEventListener('change', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && $('diff-modal').classList.contains('active')) closeDiffModal();
+});
+
+// ---------- Per-session prompt editor (modal) ----------
+
+async function openSessionPromptModal() {
+  if (!state.currentSession) { toast('请先选择会话。'); return; }
+  $('session-prompt-modal-name').textContent = `(${state.currentSession})`;
+  $('session-prompt-modal').classList.add('active');
+  await loadSessionPrompts();
+}
+function closeSessionPromptModal() {
+  $('session-prompt-modal').classList.remove('active');
+}
+
+async function loadSessionPrompts() {
+  try {
+    const data = await api(`/api/sessions/${encodeURIComponent(state.currentSession)}/overrides`);
+    renderSessionPromptsList(data.components);
+    updateSessionPromptsStatus(data.override_count, data.components.length);
+  } catch (e) {
+    toast('加载本会话提示词失败：' + e.message);
+  }
+}
+
+function updateSessionPromptsStatus(overrideCount, total) {
+  const el = $('session-prompts-status');
+  el.innerHTML = (overrideCount === 0)
+    ? `共 ${total} 个组件，<strong>全部默认</strong>`
+    : `共 ${total} 个组件，<strong>已覆盖 ${overrideCount}</strong> 个`;
+}
+
+function renderSessionPromptsList(components) {
+  const root = $('session-prompts-list');
+  root.innerHTML = '';
+  for (const c of components) {
+    const card = document.createElement('div');
+    card.className = 'prompt-card' + (c.overridden ? ' overridden' : '');
+    card.innerHTML = `
+      <div class="prompt-card-head">
+        <span class="label"></span>
+        <span class="key"></span>
+        <span class="badge">${c.overridden ? '已覆盖' : '默认'}</span>
+      </div>
+      <div class="prompt-card-hint"></div>
+      <textarea spellcheck="false"></textarea>
+      <div class="prompt-card-foot">
+        <span class="dirty"></span>
+        <button class="reset" title="清除本会话对此组件的覆盖，恢复仓库默认">重置</button>
+        <button class="apply primary" disabled>应用</button>
+      </div>
+    `;
+    card.querySelector('.label').textContent = c.label;
+    card.querySelector('.key').textContent = `[${c.source}] ${c.key}`;
+    card.querySelector('.prompt-card-hint').textContent = c.hint || '';
+    const ta = card.querySelector('textarea');
+    const apply = card.querySelector('.apply');
+    const reset = card.querySelector('.reset');
+    const dirty = card.querySelector('.dirty');
+    ta.value = c.current;
+    ta.dataset.serverValue = c.current;
+    ta.dataset.defaultValue = c.default;
+
+    const updateDirty = () => {
+      const isDirty = ta.value !== ta.dataset.serverValue;
+      apply.disabled = !isDirty;
+      dirty.textContent = isDirty ? '· 未应用' : '';
+      dirty.classList.toggle('show', isDirty);
+    };
+    ta.addEventListener('input', updateDirty);
+
+    apply.addEventListener('click', async () => {
+      apply.disabled = true;
+      try {
+        const r = await api(`/api/sessions/${encodeURIComponent(state.currentSession)}/overrides/${encodeURIComponent(c.key)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ content: ta.value }),
+        });
+        ta.dataset.serverValue = ta.value;
+        const isOverride = r.overridden;
+        card.classList.toggle('overridden', isOverride);
+        card.querySelector('.badge').textContent = isOverride ? '已覆盖' : '默认';
+        updateDirty();
+        toast('已应用');
+        updateSessionPromptsStatus(r.override_count, 9);
+      } catch (e) {
+        toast('应用失败：' + e.message);
+        apply.disabled = false;
+      }
+    });
+
+    reset.addEventListener('click', async () => {
+      if (!c.overridden && ta.value === ta.dataset.defaultValue) {
+        toast('当前就是默认值。'); return;
+      }
+      if (!confirm(`将"${c.label}"恢复为默认？`)) return;
+      try {
+        const r = await api(`/api/sessions/${encodeURIComponent(state.currentSession)}/overrides/${encodeURIComponent(c.key)}`, { method: 'DELETE' });
+        ta.value = ta.dataset.defaultValue;
+        ta.dataset.serverValue = ta.dataset.defaultValue;
+        card.classList.remove('overridden');
+        card.querySelector('.badge').textContent = '默认';
+        updateDirty();
+        toast('已重置');
+        updateSessionPromptsStatus(r.override_count, 9);
+      } catch (e) { toast('重置失败：' + e.message); }
+    });
+
+    root.appendChild(card);
+  }
+}
+
+$('session-prompt-edit-btn').addEventListener('click', openSessionPromptModal);
+$('session-prompt-modal-close').addEventListener('click', closeSessionPromptModal);
+$('session-prompt-modal').addEventListener('click', (e) => {
+  if (e.target === $('session-prompt-modal')) closeSessionPromptModal();
+});
+$('session-prompts-download').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = `/api/sessions/${encodeURIComponent(state.currentSession)}/overrides/export`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+$('session-prompts-reset-all').addEventListener('click', async () => {
+  if (!confirm('清除本会话所有专属覆盖？')) return;
+  try {
+    await api(`/api/sessions/${encodeURIComponent(state.currentSession)}/overrides/reset-all`, { method: 'POST' });
+    await loadSessionPrompts();
+  } catch (e) { toast('重置失败：' + e.message); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('session-prompt-modal').classList.contains('active')) {
+    closeSessionPromptModal();
+  }
 });
 
 (async function init() {

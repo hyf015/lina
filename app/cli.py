@@ -17,11 +17,15 @@ VERSIONS_DIR = PROJECT_ROOT / "prompt_overrides" / "versions"
 
 
 def _load_overrides_for_session(conv: Conversation) -> tuple[dict, str]:
-    """Resolve a session's prompt pin to overrides + a label.
+    """Resolve a session's prompt source to overrides + a label.
 
-    Returns (overrides_dict, label). If the pin points to a missing version,
-    falls back to the current global state and labels accordingly.
+    Returns (overrides_dict, label). Handles three modes:
+      - private mode: use conv.prompt_overrides directly
+      - shared + pinned version: load the version's overrides
+      - shared + no pin (or pin missing): use the current globals
     """
+    if conv.prompt_mode == "private":
+        return dict(conv.prompt_overrides or {}), "专属本会话"
     if conv.prompt_version_id:
         vpath = VERSIONS_DIR / f"{conv.prompt_version_id}.json"
         if vpath.exists():

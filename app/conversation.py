@@ -50,10 +50,17 @@ class Conversation:
     messages: list[Message] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     title: str = ""
-    # If set, points to a saved prompt version's id; the engine for this
-    # session will use that version's overrides. None = use the current
-    # global overrides (the editable state shown in the prompts tab).
+    # Prompt source for this session.
+    #   "shared"  → use prompt_version_id (None = current global)
+    #   "private" → use this session's own prompt_overrides dict
+    prompt_mode: str = "shared"
+    # Used when prompt_mode == "shared". Points to a saved version's id;
+    # None = use the editable globals.
     prompt_version_id: str | None = None
+    # Used when prompt_mode == "private". A dict of component → content
+    # that overrides defaults for this session only. Independent from the
+    # global overrides and from any saved version.
+    prompt_overrides: dict | None = None
     # One-shot manual override for the next turn's starting mood/trust.
     # Engine merges these on top of last_assistant_meta then clears the
     # field. {mood?: str, intensity?: int 1-10, trust?: int 1-10}
@@ -80,9 +87,12 @@ class Conversation:
             "session_id": self.session_id,
             "created_at": self.created_at,
             "title": self.title,
+            "prompt_mode": self.prompt_mode,
             "prompt_version_id": self.prompt_version_id,
             "messages": [m.to_dict() for m in self.messages],
         }
+        if self.prompt_overrides:
+            d["prompt_overrides"] = self.prompt_overrides
         if self.forced_state:
             d["forced_state"] = self.forced_state
         return d
@@ -93,7 +103,9 @@ class Conversation:
             session_id=d["session_id"],
             created_at=d.get("created_at", time.time()),
             title=d.get("title", ""),
+            prompt_mode=d.get("prompt_mode", "shared"),
             prompt_version_id=d.get("prompt_version_id"),
+            prompt_overrides=d.get("prompt_overrides"),
             forced_state=d.get("forced_state"),
             messages=[Message.from_dict(m) for m in d.get("messages", [])],
         )
@@ -147,6 +159,7 @@ class ConversationStore:
                         "title": data.get("title", "") or "（无标题）",
                         "created_at": data.get("created_at", p.stat().st_mtime),
                         "message_count": len(data.get("messages", [])),
+                        "prompt_mode": data.get("prompt_mode", "shared"),
                         "prompt_version_id": data.get("prompt_version_id"),
                     }
                 )
