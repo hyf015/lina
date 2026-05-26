@@ -405,6 +405,14 @@
   .state-bar .mood-chip { font-size: 11px; padding: 2px 9px; }
   .state-bar.empty .state-display-empty { display: inline; }
   .state-bar .state-display-empty { display: none; font-style: italic; }
+  .mood-chip.starting {
+    background: rgba(176,132,56,0.05);
+    border-color: rgba(176,132,56,0.25);
+    color: var(--ink-faint);
+    font-style: italic;
+  }
+  .mood-chip.starting .word { color: var(--ink-faint); }
+  .mood-chip.starting .dots { color: rgba(176,132,56,0.45); }
 
   .state-bar .grow { flex: 1; min-width: 8px; }
   .state-bar button.state-edit-btn {
@@ -1092,8 +1100,8 @@
 
       <div class="state-edit-form" id="state-edit-form">
         <span class="field"><label>情绪</label><input type="text" id="forced-mood" maxlength="40" placeholder="温和/警觉…"></span>
-        <span class="field"><label>强度</label><input type="number" id="forced-intensity" min="1" max="10"></span>
-        <span class="field"><label>信任</label><input type="number" id="forced-trust" min="1" max="10"></span>
+        <span class="field"><label>强度</label><input type="number" id="forced-intensity" min="1" max="10" placeholder="默认 5"></span>
+        <span class="field"><label>信任</label><input type="number" id="forced-trust" min="1" max="10" placeholder="默认 3"></span>
         <button class="apply" id="state-apply">应用</button>
         <button id="state-cancel">取消</button>
         <span class="hint">留空 = 沿用上一轮 · 一次性，下一轮后失效</span>
@@ -1347,13 +1355,22 @@ function syncPromptSelect(mode, versionId, missing, enabled) {
 
 async function selectSession(id) {
   state.currentSession = id;
+  // DEFENSIVE: wipe any stale in-memory state immediately, BEFORE the
+  // async fetch. Otherwise a quick session switch can leave the previous
+  // session's chip / pending pill visible while the new data is loading,
+  // or stick around if something else mid-flight overwrites our clean-up.
+  state.lastMeta = null;
+  state.forcedState = null;
+  renderStateBar(null, /*isStarting*/ true);
+  renderForcedPill(null);
+  closeStateEditor();
+
   const data = await api(`/api/sessions/${encodeURIComponent(id)}`);
   $('session-meta').textContent = `会话：${data.session_id}`;
   syncPromptSelect(data.prompt_mode, data.prompt_version_id, data.prompt_version_missing, true);
   state.lastMeta = data.last_meta || null;
   renderMessages(data.messages);
   renderForcedPill(data.forced_state);
-  closeStateEditor();
   renderSessions();
   $('chunks').innerHTML = '<div style="color: var(--ink-faint); font-size: 12px; font-style: italic;">发送消息后这里会出现 RAG 检索到的片段。</div>';
   $('usage').style.display = 'none';
@@ -1383,7 +1400,7 @@ function renderMessages(messages) {
       <div class="quote">"……真的假的？你刚才说的那个词，是什么意思？"</div>
     `;
     root.appendChild(empty);
-    renderStateBar(null);
+    renderStateBar(null, /*isStarting*/ true);
     return;
   }
   let latestMood = null;
@@ -1391,7 +1408,9 @@ function renderMessages(messages) {
     appendMessage(m.role, m.content, { meta: m.meta });
     if (m.role === 'assistant' && m.meta) latestMood = m.meta;
   }
-  renderStateBar(latestMood);
+  // Until the model actually emits a mood tag, treat the session as still
+  // at the documented starting state (trust=3) — not blank, not stale.
+  renderStateBar(latestMood, /*isStarting*/ latestMood === null);
   scrollToBottom();
 }
 
@@ -1406,16 +1425,25 @@ function moodChipHTML(meta) {
   `;
 }
 
-function renderStateBar(meta) {
+function renderStateBar(meta, isStarting = false) {
   const bar = $('state-bar');
   const content = $('state-content');
-  if (!meta) {
+  if (!meta && !isStarting) {
     bar.classList.add('empty');
     content.innerHTML = '';
     return;
   }
   bar.classList.remove('empty');
-  content.innerHTML = moodChipHTML(meta);
+  if (isStarting && !meta) {
+    // No assistant reply yet — surface the documented defaults so the
+    // user can see exactly what the model will start from on turn 1.
+    content.innerHTML = `
+      <span class="mood-chip starting"><span class="word">起始 · 平静</span><span class="dots">●●●●●</span></span>
+      <span class="mood-chip trust starting">信任 3/10 · 默认</span>
+    `;
+  } else {
+    content.innerHTML = moodChipHTML(meta);
+  }
 }
 
 function renderForcedPill(forced) {

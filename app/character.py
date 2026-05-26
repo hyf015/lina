@@ -362,6 +362,7 @@ class CharacterEngine:
         retrieved_history: list[Chunk],
         prior_mood: dict | None,
         is_forced: bool = False,
+        is_first_turn: bool = False,
     ) -> str:
         sections: list[str] = []
 
@@ -374,6 +375,18 @@ class CharacterEngine:
                     f"情绪：{prior_mood.get('mood', '平静')} / 强度 {prior_mood.get('intensity', 5)}\n"
                     f"对该用户的信任度：{prior_mood.get('trust', 3)} / 10\n"
                     "</状态强制设定>"
+                )
+            elif is_first_turn:
+                sections.append(
+                    "<起始状态 — 这是莉娜与该用户的第一次接触，请用以下默认值作为起点>\n"
+                    f"情绪：{prior_mood.get('mood', '平静')} / 强度 {prior_mood.get('intensity', 5)}\n"
+                    f"对该用户的信任度：{prior_mood.get('trust', 3)} / 10\n"
+                    "**强制规则**：信任度 3 是陌生人的标准起始值。"
+                    "**不要**因为用户开场白礼貌或友好就在第一轮就抬高到 5/7/8。"
+                    "信任度的调整严格遵循「情绪连续性」规则："
+                    "用户共情/真懂古代文化才 +1/+2；用户矛盾/冒犯才 -1/-2。"
+                    "如果用户只是简单打招呼或客套，这一轮的 信任= 应仍然是 3（最多 4）。\n"
+                    "</起始状态>"
                 )
             else:
                 sections.append(
@@ -418,15 +431,22 @@ class CharacterEngine:
         # Read the most-recent mood tag from the conversation so the model
         # has emotional momentum to work from. If the user has manually
         # set a forced_state, overlay it on top with sensible defaults
-        # filling any gaps.
+        # filling any gaps. If there's no prior mood at all (truly first
+        # turn, or model dropped the tag on past replies), seed with the
+        # documented defaults so trust=3 is enforced from turn 1.
         prior_mood = conversation.last_assistant_meta()
         forced = conversation.forced_state
+        has_prior_assistant = any(m.role == "assistant" for m in conversation.messages)
+        is_first_turn = False
         if forced:
             merged = {"mood": "平静", "intensity": 5, "trust": 3}
             if prior_mood:
                 merged.update(prior_mood)
             merged.update(forced)
             prior_mood = merged
+        elif not has_prior_assistant:
+            prior_mood = {"mood": "平静", "intensity": 5, "trust": 3}
+            is_first_turn = True
 
         # Build the API messages: prior history (windowed) + new user turn.
         # For assistant turns with a stored mood, prepend the mood tag back
@@ -449,6 +469,7 @@ class CharacterEngine:
                     retrieved_history,
                     prior_mood,
                     is_forced=bool(forced),
+                    is_first_turn=is_first_turn,
                 ),
             }
         ]
